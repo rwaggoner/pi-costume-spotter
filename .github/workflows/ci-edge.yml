@@ -1,0 +1,26 @@
+# Edge app CI: lint + tests. Runs anywhere — no hardware, no secrets — because
+# every hardware boundary has a mock adapter (docs/decisions/008-hardware-abstraction.md).
+name: ci-edge
+
+on:
+  push:
+    branches: [main, master]
+    paths: ["edge/**", ".github/workflows/ci-edge.yml"]
+  pull_request:
+    paths: ["edge/**", ".github/workflows/ci-edge.yml"]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: edge
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -e ".[dev]"
+      - run: ruff check .
+      - run: pytest -q

@@ -1,0 +1,27 @@
+# systemd unit for the Costume Spotter edge app.
+#
+# BEFORE INSTALLING: if your username isn't `pi`, update User= and the three
+# /home/pi/... paths below to match (e.g. ryan -> /home/ryan/...).
+#
+# Install: sudo cp deploy/costume-spotter.service /etc/systemd/system/
+#          sudo systemctl daemon-reload && sudo systemctl enable --now costume-spotter
+# Logs:    journalctl -u costume-spotter -f
+[Unit]
+Description=Costume Spotter edge application
+# Camera and network stacks must be up before we grab the CSI port.
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=pi
+WorkingDirectory=/home/pi/pi-costume-spotter/edge
+# The venv's python: picks up the .env in WorkingDirectory automatically.
+ExecStart=/home/pi/pi-costume-spotter/edge/.venv/bin/python -m costume_spotter
+Restart=on-failure
+RestartSec=5
+# The Pi 5 has 4 GB; cap us well below it so a leak can't take down the OS.
+MemoryMax=1536M
+
+[Install]
+WantedBy=multi-user.target

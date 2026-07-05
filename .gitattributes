@@ -1,0 +1,11 @@
+# Normalize to LF in the repo; editors/tools on any OS see consistent endings.
+* text=auto eol=lf
+# Windows scripts that genuinely need CRLF
+*.bat text eol=crlf
+*.ps1 text eol=crlf
+# Binaries
+*.png binary
+*.jpg binary
+*.wav binary
+*.onnx binary
+*.hef binary

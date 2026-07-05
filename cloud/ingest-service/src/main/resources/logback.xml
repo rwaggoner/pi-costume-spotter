@@ -1,0 +1,13 @@
+<!-- Plain single-line logs: Cloud Run captures stdout and Cloud Logging parses
+     severity from the level token. Structured JSON logging would be the next
+     step for a bigger service; overkill for one route. -->
+<configuration>
+    <appender name="STDOUT" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <pattern>%d{HH:mm:ss.SSS} %-5level %logger{20} - %msg%n</pattern>
+        </encoder>
+    </appender>
+    <root level="INFO">
+        <appender-ref ref="STDOUT"/>
+    </root>
+</configuration>

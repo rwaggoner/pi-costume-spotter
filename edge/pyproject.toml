@@ -1,0 +1,77 @@
+# ---------------------------------------------------------------------------
+# Costume Spotter — edge application (runs on the Raspberry Pi, and on any
+# laptop in the `dev` profile; see docs/setup-dev.md).
+#
+# Dependency philosophy: the *core* install must work everywhere with pure /
+# widely-wheeled packages. Anything tied to specific hardware or a specific
+# vendor is an optional extra, mirroring the adapter boundaries in the code
+# (docs/decisions/008-hardware-abstraction.md).
+# ---------------------------------------------------------------------------
+
+[project]
+name = "costume-spotter"
+version = "0.1.0"
+description = "Edge AI costume spotter: detects visitors, identifies costumes, speaks comments, logs sightings."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+
+dependencies = [
+    # Web/API layer (docs/requirements/06-dashboard.md)
+    "fastapi>=0.115",
+    # [standard] matters: it pulls in the `websockets` protocol implementation
+    # that /ws/events needs — bare uvicorn silently rejects WS upgrades.
+    "uvicorn[standard]>=0.30",
+    # Frames are numpy arrays; Pillow does JPEG encode/decode and synthetic drawing.
+    # (OpenCV is intentionally NOT a core dependency — see [project.optional-dependencies].)
+    "numpy>=1.26",
+    "pillow>=10.3",
+    # Edge persistence (docs/decisions/004-sqlite-edge.md)
+    "sqlalchemy>=2.0",
+    # Typed configuration from env vars / .env files
+    "pydantic>=2.7",
+    "pydantic-settings>=2.3",
+    # Claude Vision API for costume identification (docs/decisions/002-claude-vision.md).
+    # Pure-python SDK, so it is safe to install everywhere even though dev mode
+    # can run without a key.
+    "anthropic>=0.40",
+]
+
+[project.optional-dependencies]
+# Real webcam capture + HOG person detection for laptop demos.
+webcam = ["opencv-python-headless>=4.10"]
+# Google Cloud integrations: optional TTS engine and Pub/Sub cloud sync.
+gcp = [
+    "google-cloud-texttospeech>=2.16",
+    "google-cloud-pubsub>=2.21",
+]
+# Test & lint toolchain.
+dev = [
+    "pytest>=8.2",
+    "pytest-asyncio>=0.23",
+    "httpx>=0.27",          # FastAPI test client transport
+    "ruff>=0.5",
+]
+# On the Pi itself, picamera2 and the Hailo bindings come from apt
+# (python3-picamera2, hailo-all) — create the venv with --system-site-packages.
+# See docs/setup-pi.md. There is nothing to pip-install for the `pi` extra.
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["costume_spotter*"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+# E/F: pycodestyle+pyflakes, I: import order, D: docstrings on public modules —
+# this repo's whole point is readability, so docstring rules are load-bearing.
+select = ["E", "F", "I", "UP"]

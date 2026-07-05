@@ -1,0 +1,44 @@
+# Ingest service CI: compile + tests (JUnit against H2-in-Postgres-mode — no
+# Docker services needed; see cloud/ingest-service tests).
+#
+# Continuous *deployment* is deliberately absent: for a personal GCP account,
+# deploying from a trusted laptop (docs/setup-gcp.md) is a smaller attack
+# surface than granting GitHub deploy credentials. If this ever changes, the
+# right pattern is Workload Identity Federation:
+#   - google-github-actions/auth@v2 with workload_identity_provider
+#   - gcloud builds submit + terraform apply -auto-approve
+name: ci-cloud
+
+on:
+  push:
+    branches: [main, master]
+    paths: ["cloud/**", ".github/workflows/ci-cloud.yml"]
+  pull_request:
+    paths: ["cloud/**", ".github/workflows/ci-cloud.yml"]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      # setup-gradle provides the pinned Gradle version + build caching, so the
+      # repo doesn't need to commit a wrapper jar (a binary in a readable repo).
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.13"
+      - run: gradle test --no-daemon
+        working-directory: cloud/ingest-service
+
+  terraform:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+      - run: terraform fmt -check -recursive
+        working-directory: cloud/terraform
+      - run: terraform init -backend=false && terraform validate
+        working-directory: cloud/terraform

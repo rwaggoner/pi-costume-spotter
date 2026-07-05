@@ -1,0 +1,56 @@
+# ---------------------------------------------------------------------------
+# Repo-wide ignores. Component-specific ignores live in edge/, web/, cloud/.
+# ---------------------------------------------------------------------------
+
+# Secrets & local config — never commit credentials. Use .env.example as the
+# template and keep real values only on the device that needs them.
+.env
+*.env.local
+**/secrets/
+*-service-account.json
+
+# Runtime data produced by the edge app. Snapshots contain images of real
+# people and must never reach the public repo (see docs/requirements/05-storage.md).
+data/
+**/snapshots/
+*.db
+*.sqlite3
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Node / React
+node_modules/
+dist/
+*.tsbuildinfo
+
+# JVM / Gradle
+.gradle/
+build/
+!**/src/**/build/
+
+# Terraform — state files can contain secrets and are machine-specific.
+*.tfstate
+*.tfstate.*
+.terraform/
+.terraform.lock.hcl
+terraform.tfvars
+
+# Editors / OS noise
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+
+# Generated audio from TTS test runs
+*.wav
+!edge/tests/fixtures/*.wav

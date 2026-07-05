@@ -1,0 +1,4 @@
+# Copy to terraform.tfvars and fill in. terraform.tfvars is gitignored.
+project_id   = "my-gcp-project"
+region       = "us-central1"
+ingest_image = "gcr.io/my-gcp-project/costume-ingest:v1"
