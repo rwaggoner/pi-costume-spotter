@@ -20,6 +20,26 @@ from costume_spotter.events.events import BoundingBox, Detection
 _PERSON_CLASS = 0  # COCO class index for "person" — the only class we act on
 
 
+def person_rows(results) -> np.ndarray:
+    """Normalize the Hailo helper's per-class results to an (N, 5) array.
+
+    The helper's shape varies with content (issue #7, found on the very first
+    on-Pi frame): an empty class can be ``[]`` (a bare Python list — and
+    ``np.atleast_2d([])`` is the (1, 0) trap that crashed the pipeline),
+    a single detection can arrive as a flat ``(5,)`` row, and the normal case
+    is ``(N, 5)``. This funnels all of them into ``(N, 5)`` with N possibly 0.
+
+    Module-level (not a method) so it's unit-testable on machines without
+    Hailo hardware — the class constructor needs the real device.
+    """
+    if len(results) <= _PERSON_CLASS:
+        return np.empty((0, 5), dtype=np.float32)
+    rows = np.asarray(results[_PERSON_CLASS], dtype=np.float32)
+    if rows.size == 0:
+        return np.empty((0, 5), dtype=np.float32)
+    return rows.reshape(-1, 5)
+
+
 class HailoDetector(Detector):
     """People via yolov8s.hef on the Hailo-8 (docs/setup-pi.md §3)."""
 
@@ -44,11 +64,12 @@ class HailoDetector(Detector):
         small = np.asarray(
             Image.fromarray(frame).resize((self._model_w, self._model_h), Image.BILINEAR)
         )
-        # With NMS compiled into the HEF, run() returns one list per class of
-        # [y0, x0, y1, x1, score] rows, coordinates normalized to 0..1.
+        # With NMS compiled into the HEF, run() returns per-class results of
+        # [y0, x0, y1, x1, score] rows, coordinates normalized to 0..1 —
+        # in content-dependent shapes; person_rows() normalizes them.
         results = self._hailo.run(small)
         detections: list[Detection] = []
-        for y0, x0, y1, x1, score in np.atleast_2d(results[_PERSON_CLASS]):
+        for y0, x0, y1, x1, score in person_rows(results):
             if score < self._threshold:  # 01-F5, at the source
                 continue
             detections.append(Detection(
