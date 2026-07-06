@@ -1,7 +1,9 @@
 # systemd unit for the Costume Spotter edge app.
 #
-# BEFORE INSTALLING: if your username isn't `pi`, update User= and the three
+# BEFORE INSTALLING: if your username isn't `pi`, update User= and the
 # /home/pi/... paths below to match (e.g. ryan -> /home/ryan/...).
+# Also: chmod +x deploy/ensure-camera.sh (git preserves the bit; a manual
+# copy might not).
 #
 # Install: sudo cp deploy/costume-spotter.service /etc/systemd/system/
 #          sudo systemctl daemon-reload && sudo systemctl enable --now costume-spotter
@@ -16,6 +18,10 @@ Wants=network-online.target
 Type=simple
 User=pi
 WorkingDirectory=/home/pi/pi-costume-spotter/edge
+# Self-heal the AI Camera's RP2040 boot race (issue #4): reload the imx500
+# module if libcamera lists no camera. The "+" runs this one step as root
+# (modprobe needs it); the app itself still runs as User=pi.
+ExecStartPre=+/home/pi/pi-costume-spotter/edge/deploy/ensure-camera.sh
 # The venv's python: picks up the .env in WorkingDirectory automatically.
 ExecStart=/home/pi/pi-costume-spotter/edge/.venv/bin/python -m costume_spotter
 Restart=on-failure
