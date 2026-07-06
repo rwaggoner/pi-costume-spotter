@@ -61,7 +61,10 @@ class HailoDetector(Detector):
     def detect(self, frame: np.ndarray) -> list[Detection]:
         frame_h, frame_w = frame.shape[:2]
         # Resize down to the model's input size (see module docs re: aspect ratio).
-        small = np.asarray(
+        # np.array (not asarray) matters: converting a PIL image via asarray
+        # yields a READ-ONLY view, and HailoRT's set_buffer rejects it with
+        # "ValueError: array is not writeable" — found on-device (PR #8).
+        small = np.array(
             Image.fromarray(frame).resize((self._model_w, self._model_h), Image.BILINEAR)
         )
         # With NMS compiled into the HEF, run() returns per-class results of
