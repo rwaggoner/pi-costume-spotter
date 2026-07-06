@@ -181,6 +181,9 @@ confirm it comes back by itself. Logs: `journalctl -u costume-spotter -f`.
 | `hailortcli` not found / no device | `hailo-all` not installed, or PCIe ribbon loose — see the ladder below |
 | `Failed to allocate buffers` from Picamera2 | Increase CMA memory: add `dtoverlay=vc4-kms-v3d,cma-512` to `/boot/firmware/config.txt` |
 | "No cameras available!" and dmesg shows `imx500 ... probe failed with error -121` (`setup of GPIO led failed`) | The camera's onboard RP2040 wasn't ready when the driver probed — a cold-boot race, not a wiring fault. Recover: `sudo modprobe -r imx500 && sudo modprobe imx500`. The systemd unit self-heals this via `deploy/ensure-camera.sh` |
+=======
+| "libcamera sees no cameras" at startup (older builds: bare `IndexError` from `Picamera2()`) | The OS lost the camera: check `rpicam-hello --list-cameras`, reseat the CSI ribbon at both ends (easily disturbed while mounting the Hailo HAT), confirm `imx500-all` is installed and `camera_auto_detect=1` in config.txt, reboot |
+
 | Detection runs but < 10 fps | Check `HAILO_HEF_PATH` points to a Hailo-**8** (not 8L) model; check thermals (`vcgencmd measure_temp`) |
 | No audio | Wrong `AUDIO_DEVICE`; re-run `aplay -l`; USB speakers sometimes enumerate as card 2 after reboot — consider an `/etc/asound.conf` default |
 | Comments are always "mystery guest" | No/invalid `ANTHROPIC_API_KEY`, or no internet — check `/api/health` |
