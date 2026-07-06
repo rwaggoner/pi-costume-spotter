@@ -36,7 +36,7 @@ identifier, null audio. Optionally edit `.env`:
 
 | Variable | Effect |
 |----------|--------|
-| `ANTHROPIC_API_KEY=sk-ant-…` | Real costume identification via Claude |
+| `ANTHROPIC_API_KEY=<your-real-key>` | Real costume identification via Claude. Keys are ~100 ASCII chars, shown in full only when created in the console — the truncated `sk-ant-…` display in the key list is not the key (the app rejects non-ASCII values at startup). |
 | `CAMERA_SOURCE=webcam` | Use your webcam instead of the synthetic scene |
 | `TTS_ENGINE=piper` | Real local speech if you've installed a Piper voice |
 

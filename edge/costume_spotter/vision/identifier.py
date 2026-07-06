@@ -37,6 +37,21 @@ class CostumeIdentifier:
         self._pretend = cycle(prompts.PRETEND_IDENTITIES)
 
         if api_key:
+            # Fail fast on an unusable key (same philosophy as 01-F6). Keys ride
+            # in an ASCII-only HTTP header, so a non-ASCII key can never work —
+            # and the classic way to get one is pasting a placeholder or the
+            # console's truncated display ("sk-ant-…", with a real ellipsis).
+            # Field-tested: this exact mistake cost two debugging sessions
+            # because the old behavior was three doomed retries per visitor.
+            if not api_key.isascii():
+                bad = ", ".join(sorted({repr(c) for c in api_key if not c.isascii()}))
+                raise ValueError(
+                    f"ANTHROPIC_API_KEY contains non-ASCII characters ({bad}) — this is "
+                    "usually a pasted placeholder or the console's truncated display "
+                    "('sk-ant-…'). Real keys are ~100 ASCII characters, shown in full "
+                    "only when created. Check edge/.env AND the shell environment "
+                    "(`env | grep ANTHROPIC`) — exported variables override .env."
+                )
             # Import here so the SDK is only a hard requirement when actually used.
             from anthropic import AsyncAnthropic
 
@@ -108,7 +123,12 @@ class CostumeIdentifier:
                     timeout=self._timeout,
                 )
                 return self._parse(response.content[0].text)
-            except Exception as exc:  # noqa: BLE001 — every failure type retries the same way
+            except UnicodeEncodeError:
+                # Encoding failures happen before any network I/O and can never
+                # succeed on retry (defense in depth behind the __init__ key
+                # check). Surface immediately → fallback identity (03-F6).
+                raise
+            except Exception as exc:  # noqa: BLE001 — every other failure retries the same way
                 last_error = exc
                 logger.info("claude attempt %d/%d failed: %s", attempt + 1, _MAX_RETRIES + 1, exc)
         raise last_error  # type: ignore[misc]  # loop ran at least once

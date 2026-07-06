@@ -28,6 +28,16 @@ async def collect_identified(bus: EventBus) -> list:
     return received
 
 
+# -- key validation (issue #1) ------------------------------------------------
+
+def test_non_ascii_api_key_is_rejected_at_startup():
+    """The pasted-placeholder key ('sk-ant-…', real Unicode ellipsis) must fail
+    loudly at construction, not as three doomed retries per visitor."""
+    with pytest.raises(ValueError, match="non-ASCII"):
+        CostumeIdentifier(EventBus(), api_key="sk-ant-…", model="x",
+                          timeout_seconds=1, detector_name="mock")
+
+
 # -- pretend mode (03-F7) ----------------------------------------------------
 
 async def test_pretend_mode_identifies_without_api():

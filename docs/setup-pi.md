@@ -137,13 +137,26 @@ nano .env
 Set at minimum:
 
 ```ini
+# The one hardware switch: pi selects Picamera2 camera + Hailo detector + ALSA
+# audio. (CAMERA_SOURCE / DETECTOR exist only to override that pairing.)
 EDGE_PROFILE=pi
-ANTHROPIC_API_KEY=sk-ant-...
+ANTHROPIC_API_KEY=sk-ant-...   # paste your REAL key — see the API-key note below
 HAILO_HEF_PATH=/home/pi/costume-spotter-data/models/yolov8s_h8.hef
 PIPER_VOICE_PATH=/home/pi/costume-spotter-data/voices/en_US-lessac-medium.onnx
 AUDIO_DEVICE=plughw:1,0
 DATA_DIR=/home/pi/costume-spotter-data
 ```
+
+**The API-key note (learned the hard way, twice):**
+
+- A real key is `sk-ant-api03-` + ~90 more characters, all ASCII. The console
+  shows it **in full exactly once**, at creation — the `sk-ant-…xyz` shown in
+  the key list afterwards is a truncated *display*, and pasting it puts a real
+  Unicode ellipsis in your config. The app now refuses to start on a non-ASCII
+  key rather than failing per-visitor.
+- Shell environment variables **override** `.env`. If identification still
+  fails after fixing the file, run `env | grep ANTHROPIC` — a stale
+  `export ANTHROPIC_API_KEY=…` in `~/.bashrc` wins over everything.
 
 **Check (the big one):** from `pi-costume-spotter/edge` with the venv active,
 `python -m costume_spotter`, then open

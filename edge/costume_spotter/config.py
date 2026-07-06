@@ -10,6 +10,7 @@ tests construct ``Settings(...)`` with explicit values.
 from enum import StrEnum
 from pathlib import Path
 
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -32,13 +33,18 @@ class Settings(BaseSettings):
     edge_profile: Profile = Profile.DEV
 
     # --- Camera ---
-    camera_source: str = "synthetic"  # synthetic | webcam | picamera2
+    # None = "follow the profile" (dev → synthetic, pi → picamera2); set
+    # explicitly only to override, e.g. CAMERA_SOURCE=webcam on a laptop.
+    # Field-tested reason this exists: a Pi with EDGE_PROFILE=pi and no
+    # override once ran the synthetic test scene, exactly as the old defaults
+    # said to — the profile must be the one switch that re-wires hardware.
+    camera_source: str | None = None  # synthetic | webcam | picamera2
     frame_width: int = 1280
     frame_height: int = 720
     target_fps: float = 15.0
 
     # --- Detection (docs/requirements/01-detection.md) ---
-    detector: str = "mock"  # mock | hog | hailo
+    detector: str | None = None  # mock | hog | hailo; None = follow the profile
     detection_confidence_threshold: float = 0.5  # 01-F5
     hailo_hef_path: Path | None = None
 
@@ -71,6 +77,15 @@ class Settings(BaseSettings):
     gcp_project_id: str | None = None
     gcp_pubsub_topic: str = "costume-sightings"
     device_id: str = "porch-pi"
+
+    @model_validator(mode="after")
+    def _profile_defaults(self) -> "Settings":
+        """Resolve profile-dependent defaults (see camera_source comment above)."""
+        if self.camera_source is None:
+            self.camera_source = "picamera2" if self.edge_profile is Profile.PI else "synthetic"
+        if self.detector is None:
+            self.detector = "hailo" if self.edge_profile is Profile.PI else "mock"
+        return self
 
     # Derived paths — one place decides the on-disk layout under data_dir.
     @property
