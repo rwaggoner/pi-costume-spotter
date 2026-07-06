@@ -25,6 +25,18 @@ class Picamera2Source(FrameSource):
                 "CAMERA_SOURCE=picamera2 requires python3-picamera2 from apt and a "
                 "venv created with --system-site-packages (docs/setup-pi.md §6)"
             ) from exc
+        # Fail fast with an actionable message (01-F6): Picamera2() itself dies
+        # with a bare IndexError when libcamera reports zero cameras — the
+        # least-debuggable startup crash of the whole bring-up. Field-tested.
+        if not Picamera2.global_camera_info():
+            raise RuntimeError(
+                "libcamera sees no cameras. Check, in order: "
+                "(1) `rpicam-hello --list-cameras` — does the OS see it at all? "
+                "(2) CSI ribbon seated at BOTH ends, correct orientation "
+                "(easily disturbed while mounting the Hailo HAT); "
+                "(3) `sudo apt install imx500-all` (docs/setup-pi.md §2); "
+                "(4) reboot after any of the above."
+            )
         self._camera = Picamera2()
         config = self._camera.create_video_configuration(
             main={"size": (width, height), "format": "BGR888"}  # = RGB in numpy; see module docs
