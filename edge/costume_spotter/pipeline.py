@@ -54,6 +54,19 @@ class FramePipeline:
                 # Exponential moving average smooths the dashboard's fps readout.
                 inst_fps = 1.0 / max(elapsed, self._frame_budget)
                 self._fps = self._fps * 0.9 + inst_fps * 0.1
+        except Exception:
+            # This task is fire-and-forget from main.py's lifespan; without this
+            # handler its exception would be silently discarded and the app
+            # would keep serving an API over a dead camera (issue #6 — exactly
+            # what happened on the first on-Pi run). Shout, mark unhealthy so
+            # the dashboard header goes red, and re-raise.
+            # (CancelledError is BaseException, so normal shutdown skips this.)
+            logger.exception("pipeline crashed — detection and the live feed are DOWN")
+            self._bus.publish(SystemStatus(component="detector", ok=False,
+                                           detail="pipeline crashed; see app logs"))
+            self._bus.publish(SystemStatus(component="camera", ok=False,
+                                           detail="pipeline crashed; see app logs"))
+            raise
         finally:
             self._source.close()
             self._detector.close()
