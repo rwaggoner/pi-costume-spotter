@@ -46,6 +46,24 @@ async def test_speaks_and_reports(bus):
     assert spoken_events[0].engine == "null"
 
 
+async def test_audio_filter_transforms_wav_before_playback(bus):  # issue #15
+    """The optional filter (e.g. SpookyVoice) runs between synthesis and play."""
+    class UppercaseFilter:  # a trivial stand-in for the spooky filter
+        def apply(self, wav: bytes) -> bytes:
+            return b"FILTERED:" + wav
+
+    player = RecordingPlayer()
+    SpeechService(bus, NullTtsEngine(), player, audio_filter=UppercaseFilter())
+    await bus.start()
+
+    bus.publish(identified("s1"))
+    await drain(bus)
+
+    assert len(player.played) == 1
+    assert player.played[0].startswith(b"FILTERED:")  # the filter's output reached the player
+    await bus.stop()
+
+
 async def test_engine_failure_is_reported_not_fatal(bus):  # 04-F5
     class BrokenEngine(TtsEngine):
         name = "broken"

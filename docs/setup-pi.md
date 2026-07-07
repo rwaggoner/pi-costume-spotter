@@ -120,6 +120,24 @@ wget https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/lessac/me
 
 **Check:** `echo "trick or treat" | piper -m en_US-lessac-medium.onnx -f test.wav && aplay test.wav`
 
+### Optional: spooky voice
+
+Set `SPOOKY_VOICE=true` in `.env` to run each greeting through a rotating set of
+Halloween effects (friendly ghost → classic spooky → crypt keeper, one per
+visitor). It needs `sox`:
+
+```bash
+sudo apt install -y sox
+# audition and tune (cents pitch, reverb 0-100, echo gain-in gain-out delay decay):
+echo "Welcome, mortal" | piper -m en_US-lessac-medium.onnx -f /tmp/plain.wav
+sox /tmp/plain.wav /tmp/spooky.wav pitch -400 reverb 60 echo 0.8 0.7 60 0.5
+aplay /tmp/spooky.wav
+```
+
+The presets live in [`edge/costume_spotter/speech/spooky.py`](../edge/costume_spotter/speech/spooky.py) —
+edit `PRESETS` to taste. If `sox` isn't installed the app logs a warning and
+plays normal audio, so this can never silence the porch.
+
 ## 6. The application
 
 ```bash
