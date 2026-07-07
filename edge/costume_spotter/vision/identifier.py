@@ -77,7 +77,9 @@ class CostumeIdentifier:
             costume, confidence, comment, source = *next(self._pretend), "pretend"
         else:
             try:
-                costume, confidence, comment = await self._identify_with_claude(event.snapshot_jpeg)
+                costume, confidence, comment = await self._identify_with_claude(
+                    [event.snapshot_jpeg, *event.extra_jpegs]
+                )
                 source = "claude"
                 if costume:
                     self._recent_costumes.append(costume)
@@ -102,17 +104,27 @@ class CostumeIdentifier:
             detector=self._detector_name,
         ))
 
-    async def _identify_with_claude(self, snapshot_jpeg: bytes) -> tuple[str | None, str, str]:
-        """One vision call returning (costume, confidence, comment) — 03-F2."""
-        image_block = {
-            "type": "image",
-            "source": {
-                "type": "base64",
-                "media_type": "image/jpeg",
-                "data": base64.standard_b64encode(snapshot_jpeg).decode("ascii"),
-            },
-        }
-        user_prompt = prompts.build_user_prompt(list(self._recent_costumes))
+    async def _identify_with_claude(
+        self, snapshot_jpegs: list[bytes]
+    ) -> tuple[str | None, str, str]:
+        """One vision call returning (costume, confidence, comment) — 03-F2.
+
+        Multiple snapshots (issue #11) are distinct moments of the SAME visitor,
+        all sent in the single call — still one round trip per sighting.
+        """
+        image_blocks = [
+            {
+                "type": "image",
+                "source": {
+                    "type": "base64",
+                    "media_type": "image/jpeg",
+                    "data": base64.standard_b64encode(jpeg).decode("ascii"),
+                },
+            }
+            for jpeg in snapshot_jpegs[:3]  # cap defensively; tracker sends ≤3
+        ]
+        user_prompt = prompts.build_user_prompt(list(self._recent_costumes),
+                                                n_images=len(image_blocks))
         last_error: Exception | None = None
         for attempt in range(_MAX_RETRIES + 1):
             if attempt:
@@ -124,7 +136,7 @@ class CostumeIdentifier:
                         max_tokens=200,
                         system=prompts.SYSTEM_PROMPT,
                         messages=[{"role": "user",
-                                   "content": [image_block,
+                                   "content": [*image_blocks,
                                                {"type": "text", "text": user_prompt}]}],
                     ),
                     timeout=self._timeout,

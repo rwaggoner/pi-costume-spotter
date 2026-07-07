@@ -13,10 +13,10 @@ costumes.
 | ID | Requirement |
 |----|-------------|
 | 02-F1 | Associate detections across frames using IoU (intersection-over-union) matching, assigning a stable visitor ID while a person remains in frame. |
-| 02-F2 | Publish exactly one `NewVisitorSpotted` event per tracked visitor, carrying a cropped snapshot of the person. |
+| 02-F2 | Publish exactly one `NewVisitorSpotted` event per tracked visitor, carrying a primary cropped snapshot plus up to two additional crops from distinct moments (issue #11) for identification to get a clearer look. |
 | 02-F3 | Require a visitor to be seen for **N consecutive frames** (configurable, default 5) before announcing — a one-frame YOLO false positive on a shadow must not trigger an event. |
 | 02-F4 | Retire a visitor after they have been out of frame for **T seconds** (configurable, default 30). A retired visitor who returns is treated as new — re-identification is explicitly out of scope (privacy). |
-| 02-F5 | Choose the snapshot from the frame where the person's box is largest (they're closest / most visible), not the first frame they appeared in at the edge of the shot. |
+| 02-F5 | Choose the **primary** snapshot from the frame where the person's box is largest (closest / most visible); the additional crops (02-F2) come from other distinct moments so identification isn't hostage to one blurred frame. |
 | 02-F6 | Support multiple simultaneous visitors with independent life cycles. |
 
 ## Non-functional requirements

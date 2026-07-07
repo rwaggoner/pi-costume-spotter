@@ -37,12 +37,23 @@ _HISTORY_TEMPLATE = (
 _HISTORY_LIMIT = 12
 
 
-def build_user_prompt(recent_costumes: list[str]) -> str:
-    """The per-call user prompt, with tonight's costume history when there is one."""
-    if not recent_costumes:
-        return USER_PROMPT
-    seen = ", ".join(recent_costumes[-_HISTORY_LIMIT:])
-    return USER_PROMPT + _HISTORY_TEMPLATE.format(seen=seen)
+# When the tracker sends more than one crop, they're the SAME visitor caught at
+# different moments — say so, or the model may think it's a group (issue #11).
+_MULTI_IMAGE_NOTE = (
+    " You are shown {n} photos of the SAME visitor from different moments —"
+    " use whichever is clearest; they are one person, not a group."
+)
+
+
+def build_user_prompt(recent_costumes: list[str], n_images: int = 1) -> str:
+    """The per-call user prompt: same-visitor note (issue #11) + tonight's history."""
+    text = USER_PROMPT
+    if n_images > 1:
+        text += _MULTI_IMAGE_NOTE.format(n=n_images)
+    if recent_costumes:
+        seen = ", ".join(recent_costumes[-_HISTORY_LIMIT:])
+        text += _HISTORY_TEMPLATE.format(seen=seen)
+    return text
 
 
 # What pretend mode (no API key — 03-F7) rotates through: enough variety that
