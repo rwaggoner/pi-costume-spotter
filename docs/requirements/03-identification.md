@@ -12,8 +12,8 @@ hardware can do well ([ADR-002](../decisions/002-claude-vision.md)).
 
 | ID | Requirement |
 |----|-------------|
-| 03-F1 | Consume `NewVisitorSpotted` events; send the cropped snapshot to the Claude Vision API. |
-| 03-F2 | One API call returns all three outputs — costume label, confidence (`high/medium/low`), and comment — via a structured (JSON) response. Two calls per visitor would double cost and latency. |
+| 03-F1 | Consume `NewVisitorSpotted` events; send the visitor's crop(s) to the Claude Vision API. When the tracker supplies more than one crop (02-F2), all are sent in a single call and the prompt notes they are the same visitor at different moments (issue #11), so one blurred frame can't sink the identification. |
+| 03-F2 | One API call returns all three outputs — costume label, confidence (`high/medium/low`), and comment — via a structured (JSON) response, regardless of how many snapshots it carries. Two calls per visitor would double cost and latency. |
 | 03-F3 | Recognize the "no costume" case: a person in regular clothes gets `costume: null` and a gentle generic greeting instead of a hallucinated costume. |
 | 03-F4 | Comments must be family-friendly, ≤ 20 words (spoken aloud in a few seconds), and never mock the person — the prompt encodes these rules; they are also asserted in tests against the fallback generator. |
 | 03-F5 | Publish `CostumeIdentified` on success. |

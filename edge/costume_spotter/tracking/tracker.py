@@ -30,10 +30,14 @@ class _TrackedVisitor:
     last_seen: float
     consecutive_hits: int = 1
     announced: bool = False
-    # Best snapshot so far = the frame where they appeared largest (≈ closest,
-    # most visible — 02-F5). Kept only until announcement, then freed.
+    # Crops kept until announcement, then freed (02-F5 / issue #11):
+    # the FIRST sighting, the BEST (largest ≈ closest) so far, and — added at
+    # announcement time — the current frame. Distinct moments give the
+    # identifier multiple looks at the same visitor.
+    first_crop: np.ndarray | None = None
     best_crop: np.ndarray | None = None
     best_area: int = 0
+    best_hit: int = 1  # which hit produced best_crop, for de-duplication
 
 
 @dataclass(frozen=True)
@@ -42,7 +46,9 @@ class NewVisitor:
 
     visitor_id: int
     box: BoundingBox
-    snapshot: np.ndarray  # RGB crop; the pipeline JPEG-encodes it
+    # RGB crops, primary (largest) first, up to 3 distinct moments; the
+    # pipeline JPEG-encodes them. snapshots[0] is what storage will keep.
+    snapshots: tuple[np.ndarray, ...]
 
 
 @dataclass
@@ -81,7 +87,7 @@ class VisitorTracker:
             matched_visitors.add(visitor.visitor_id)
             self._advance(visitor, det, frame, now)
             if self._just_became_announceable(visitor):
-                announced.append(self._announce(visitor))
+                announced.append(self._announce(visitor, det, frame))
 
         # "Consecutive" means consecutive (02-F3): a candidate that skipped a frame
         # starts its stability count over. Announced visitors keep their identity
@@ -110,18 +116,30 @@ class VisitorTracker:
             self._remember_best_crop(v, det.box, frame)
 
     def _remember_best_crop(self, v: _TrackedVisitor, box: BoundingBox, frame: np.ndarray) -> None:
+        crop = None
+        if v.first_crop is None:
+            crop = imaging.crop_box(frame, box).copy()
+            v.first_crop = crop
         if box.area > v.best_area:
             v.best_area = box.area
-            v.best_crop = imaging.crop_box(frame, box).copy()
+            v.best_hit = v.consecutive_hits
+            # Reuse the crop if this frame is both first AND best (hit 1).
+            v.best_crop = crop if crop is not None else imaging.crop_box(frame, box).copy()
 
     def _just_became_announceable(self, v: _TrackedVisitor) -> bool:
         return not v.announced and v.consecutive_hits >= self.min_hits
 
-    def _announce(self, v: _TrackedVisitor) -> NewVisitor:
+    def _announce(self, v: _TrackedVisitor, det: Detection, frame: np.ndarray) -> NewVisitor:
         v.announced = True
-        assert v.best_crop is not None  # set on first sighting, by construction
-        out = NewVisitor(v.visitor_id, v.box, v.best_crop)
+        assert v.best_crop is not None and v.first_crop is not None  # set at hit 1
+        # Up to 3 distinct moments, primary (largest) first. The dict de-dupes
+        # by hit number: with min_hits=1 all three collapse to a single crop.
+        by_hit: dict[int, np.ndarray] = {v.best_hit: v.best_crop}
+        by_hit.setdefault(v.consecutive_hits, imaging.crop_box(frame, det.box).copy())
+        by_hit.setdefault(1, v.first_crop)
+        out = NewVisitor(v.visitor_id, v.box, tuple(by_hit.values()))
         v.best_crop = None  # free the pixels; only the box is needed from here on
+        v.first_crop = None
         return out
 
     def _retire_stale(self, now: float) -> None:

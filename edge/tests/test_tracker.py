@@ -73,7 +73,7 @@ def test_two_simultaneous_visitors():  # 02-F6
     assert {a.visitor_id for a in announced} == {1, 2}
 
 
-def test_snapshot_is_from_the_largest_appearance():  # 02-F5: closest ≈ biggest box
+def test_primary_snapshot_is_from_the_largest_appearance():  # 02-F5: closest ≈ biggest box
     tracker = make_tracker(min_hits=4)
     announced = []
     # Person approaches: box grows each frame. min_hits=4 fires on frame 4,
@@ -82,9 +82,40 @@ def test_snapshot_is_from_the_largest_appearance():  # 02-F5: closest ≈ bigges
     for i, (w, h) in enumerate(sizes):
         announced += tracker.update([detection(100, 100, w, h)], F, now=i * 0.1)
     assert len(announced) == 1
-    snap_h, snap_w = announced[0].snapshot.shape[:2]
+    # snapshots[0] is the primary (largest) crop (issue #11).
+    snap_h, snap_w = announced[0].snapshots[0].shape[:2]
     # Crop = box + 15% padding on each side (imaging.crop_box), clipped to frame.
     assert snap_w >= 60 and snap_h >= 120
+
+
+def test_announcement_carries_three_distinct_moments():  # issue #11
+    tracker = make_tracker(min_hits=4)
+    announced = []
+    # Box peaks in the MIDDLE (frame 2), so first (frame 1), best (frame 2), and
+    # the announcement frame (frame 4) are three genuinely distinct moments.
+    # Sizes stay close enough that consecutive-frame IoU clears the match
+    # threshold — a person's box grows gradually, not in leaps.
+    sizes = [(50, 100), (60, 120), (55, 110), (52, 104)]
+    for i, (w, h) in enumerate(sizes):
+        announced += tracker.update([detection(100, 100, w, h)], F, now=i * 0.1)
+    assert len(announced) == 1
+    snaps = announced[0].snapshots
+    assert len(snaps) == 3
+    # Primary (snapshots[0]) is the largest crop — the frame-2 peak.
+    assert snaps[0].shape[0] * snaps[0].shape[1] == max(s.shape[0] * s.shape[1] for s in snaps)
+
+
+def test_snapshots_deduped_when_largest_is_the_announcement_frame():  # dedup edge case
+    # Person grows to their largest on the very frame they cross min_hits: the
+    # "best" and "current" moments coincide, so we keep 2 crops (first + best),
+    # not 3 with a duplicate.
+    tracker = make_tracker(min_hits=3)
+    announced = []
+    sizes = [(30, 60), (45, 90), (60, 120)]  # strictly growing; largest is frame 3
+    for i, (w, h) in enumerate(sizes):
+        announced += tracker.update([detection(100, 100, w, h)], F, now=i * 0.1)
+    assert len(announced) == 1
+    assert len(announced[0].snapshots) == 2
 
 
 def test_memory_is_bounded_by_retirement():  # 02-N2

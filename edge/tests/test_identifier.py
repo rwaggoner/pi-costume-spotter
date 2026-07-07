@@ -58,6 +58,48 @@ async def test_pretend_mode_identifies_without_api():
     await bus.stop()
 
 
+async def test_sends_all_snapshots_and_history_to_claude():  # issues #10, #11
+    """A stub client captures the request: multiple image blocks go in one call,
+    and after a costume is recorded, the next call's prompt names it."""
+    bus = EventBus()
+    identifier = CostumeIdentifier(bus, api_key="sk-test", model="x", timeout_seconds=5,
+                                   detector_name="mock")
+    calls: list[dict] = []
+
+    class Capturing:
+        class messages:  # noqa: N801 — mimics the SDK's shape
+            @staticmethod
+            async def create(**kwargs):
+                calls.append(kwargs)
+
+                class _Resp:  # minimal stand-in for the SDK response
+                    content = [type("B", (), {"text":
+                        '{"costume": "witch", "confidence": "high", "comment": "Nice hat!"}'})]
+                return _Resp()
+
+    identifier._client = Capturing()  # noqa: SLF001
+    await collect_identified(bus)
+    await bus.start()
+
+    # First visitor: two crops, no history yet.
+    bus.publish(NewVisitorSpotted(visitor_id=1, snapshot_jpeg=b"\xff\xd8a",
+                                  box=BoundingBox(0, 0, 10, 20), extra_jpegs=(b"\xff\xd8b",)))
+    await eventually(lambda: len(calls) == 1, timeout=10)
+    content = calls[0]["messages"][0]["content"]
+    images = [b for b in content if b["type"] == "image"]
+    assert len(images) == 2  # both crops in one call (#11)
+    text = next(b["text"] for b in content if b["type"] == "text")
+    assert "SAME visitor" in text
+
+    # Second visitor: history now contains "witch" from the first (#10).
+    bus.publish(NewVisitorSpotted(visitor_id=2, snapshot_jpeg=b"\xff\xd8c",
+                                  box=BoundingBox(0, 0, 10, 20)))
+    await eventually(lambda: len(calls) == 2, timeout=10)
+    text2 = next(b["text"] for b in calls[1]["messages"][0]["content"] if b["type"] == "text")
+    assert "witch" in text2
+    await bus.stop()
+
+
 async def test_fallback_when_api_is_down():  # 03-F6
     bus = EventBus()
     identifier = CostumeIdentifier(bus, api_key="sk-test", model="x", timeout_seconds=1,

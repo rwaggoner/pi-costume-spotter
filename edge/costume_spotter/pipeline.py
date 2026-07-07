@@ -83,13 +83,16 @@ class FramePipeline:
         new_visitors = self._tracker.update(detections, frame, now=time.monotonic())
 
         for visitor in new_visitors:
-            snapshot_jpeg = await asyncio.to_thread(imaging.encode_jpeg, visitor.snapshot, 90)
-            logger.info("new visitor #%d (box %dx%d)", visitor.visitor_id,
-                        visitor.box.width, visitor.box.height)
+            # Encode every kept moment (≤3); the first is the primary crop.
+            jpegs = [await asyncio.to_thread(imaging.encode_jpeg, snap, 90)
+                     for snap in visitor.snapshots]
+            logger.info("new visitor #%d (box %dx%d, %d snapshot(s))", visitor.visitor_id,
+                        visitor.box.width, visitor.box.height, len(jpegs))
             self._bus.publish(NewVisitorSpotted(
                 visitor_id=visitor.visitor_id,
-                snapshot_jpeg=snapshot_jpeg,
+                snapshot_jpeg=jpegs[0],
                 box=visitor.box,
+                extra_jpegs=tuple(jpegs[1:]),
             ))
 
         # Publish the frame for the MJPEG stream + overlay. Quality 80 halves

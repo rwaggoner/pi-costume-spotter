@@ -70,10 +70,18 @@ class BaseEvent:
         out: dict = {"kind": self.kind}
         for f in dataclasses.fields(self):
             value = getattr(self, f.name)
-            if isinstance(value, bytes):
+            if _holds_image_bytes(value):
                 continue  # images never ride the event socket
             out[f.name] = _jsonify(value)
         return out
+
+
+def _holds_image_bytes(value) -> bool:
+    """True for bytes and for collections of bytes (e.g. ``extra_jpegs``)."""
+    if isinstance(value, bytes):
+        return True
+    return (isinstance(value, (list, tuple)) and len(value) > 0
+            and isinstance(value[0], bytes))
 
 
 def _jsonify(value):
@@ -110,13 +118,17 @@ class FrameProcessed(BaseEvent):
 class NewVisitorSpotted(BaseEvent):
     """The tracker decided a genuinely new person is here (02-F2). ~One per visitor.
 
-    Carries the cropped snapshot that identification will send to Claude —
+    Carries the cropped snapshots that identification will send to Claude —
     downstream components must not need to reach back into the video pipeline.
+    ``snapshot_jpeg`` is the primary (largest) crop, and the only one storage
+    keeps; ``extra_jpegs`` are up to two more distinct moments of the same
+    visitor for identification to get a clearer look (issue #11).
     """
 
     visitor_id: int
     snapshot_jpeg: bytes
     box: BoundingBox
+    extra_jpegs: tuple[bytes, ...] = ()
 
 
 @dataclass(frozen=True)
