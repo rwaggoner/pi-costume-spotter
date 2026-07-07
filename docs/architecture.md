@@ -31,8 +31,8 @@ flowchart TB
         DET["detection/<br/>Detector<br/><i>Hailo | IMX500 | Mock</i>"]
         TRK["tracking/<br/>VisitorTracker<br/><i>IoU matching, dedupe</i>"]
         BUS(("events/<br/>EventBus<br/><i>asyncio pub/sub</i>"))
-        VIS["vision/<br/>CostumeIdentifier<br/><i>Claude Vision API</i>"]
-        SPK["speech/<br/>SpeechService<br/><i>Piper | Google TTS</i>"]
+        VIS["vision/<br/>CostumeIdentifier<br/><i>Claude Vision, best-of-3 crops</i>"]
+        SPK["speech/<br/>SpeechService<br/><i>Piper | Google TTS<br/>+ optional spooky filter</i>"]
         STO["storage/<br/>SightingRepository<br/><i>SQLAlchemy + SQLite</i>"]
         SNAP["storage/<br/>SnapshotStore<br/><i>JPEG files + pruning</i>"]
         API["api/<br/>FastAPI<br/><i>REST + WebSocket + MJPEG</i>"]
@@ -87,16 +87,16 @@ sequenceDiagram
         Trk->>Trk: match boxes to known visitors (IoU)
     end
     Note over Trk: A box that matches no known visitor,<br/>seen stably for N frames → new visitor
-    Trk->>Bus: NewVisitorSpotted(snapshot, box)
+    Trk->>Bus: NewVisitorSpotted(1-3 crops, box)
     Bus-->>WS: live log entry ("Visitor #17 spotted")
     Bus->>Vis: (subscriber)
-    Vis->>Vis: crop person, JPEG-encode,<br/>call Claude Vision (structured output)
+    Vis->>Vis: send crops + tonight's costume history<br/>to Claude Vision (one structured call)
     Vis->>Bus: CostumeIdentified(label, confidence, comment)
     par independent subscribers
         Bus->>Sto: save sighting row + snapshot file
         Sto->>Bus: SightingLogged(id)
     and
-        Bus->>Spk: synthesize comment → speaker queue
+        Bus->>Spk: synthesize comment → optional spooky filter → speaker
         Spk->>Bus: CommentSpoken
     and
         Bus-->>WS: live log entry ("T-Rex! 🦖 …comment…")
@@ -110,7 +110,7 @@ Events are frozen dataclasses in [`edge/costume_spotter/events/events.py`](../ed
 | Event | Published by | Consumed by | Payload highlights |
 |-------|--------------|-------------|--------------------|
 | `FrameProcessed` | pipeline | API (MJPEG/overlay) | annotated frame, boxes, fps |
-| `NewVisitorSpotted` | tracker | identifier, API | visitor id, snapshot (JPEG bytes), box |
+| `NewVisitorSpotted` | tracker | identifier, API | visitor id, primary snapshot + up to 2 extra crops (JPEG bytes, dropped from the WS wire), box |
 | `CostumeIdentified` | identifier | storage, speech, API, cloudsync | costume label, confidence, comment |
 | `SightingLogged` | storage | API | sighting DB id, snapshot path |
 | `CommentSpoken` | speech | API | text, engine used, duration |
@@ -130,7 +130,7 @@ flowchart TD
     D -- yes --> E[Nothing to do]
     D -- no --> F{Seen stably for<br/>≥ N consecutive frames?}
     F -- no --> E
-    F -- yes --> G[Mark announced,<br/>crop best snapshot]
+    F -- yes --> G[Mark announced, keep the largest crop<br/>+ up to 2 distinct earlier moments]
     G --> H[/Publish NewVisitorSpotted/]
     B -- no --> I[Start tracking as candidate visitor]
     J[Every frame: visitors unseen<br/>for > T seconds] --> K[Retire visitor<br/>— may be re-announced if they return]
@@ -156,6 +156,30 @@ Why Hailo is primary and the IMX500's on-sensor NPU is the fallback: the Hailo-8
 TOPS runs larger, more accurate models with headroom to spare, while the IMX500 is
 limited to small models but consumes zero host CPU. Full analysis in
 [ADR-001](decisions/001-hailo-vs-imx500.md).
+
+Frames are **letterboxed** into the model's square input — scaled preserving aspect
+ratio and padded — rather than squished, and result boxes are mapped back through the
+same geometry. Squishing a 16:9 frame distorts people ~33% horizontally and measurably
+hurts recall on wide/bulky costumes, exactly the visitors this project most wants to
+catch. The geometry is pure, unit-tested functions in
+[`detection/hailo.py`](../edge/costume_spotter/detection/hailo.py).
+
+## Resilience choices (for an unattended appliance)
+
+This runs on a porch through power cuts, so several deliberate choices favor
+self-healing and loud failure over silent breakage:
+
+- **The frame pipeline shouts when it dies.** It's a fire-and-forget asyncio task;
+  its exceptions are caught, logged with a full traceback, and flip the
+  camera/detector health to red — rather than being silently discarded while the API
+  keeps serving a frozen feed.
+- **The camera self-heals a boot race.** The AI Camera's on-board RP2040 can be slow
+  to initialize at cold boot, leaving the `imx500` driver unbound; the systemd unit's
+  [`ensure-camera.sh`](../edge/deploy/ensure-camera.sh) reloads the module before the
+  app starts (see [setup-pi.md](setup-pi.md) troubleshooting).
+- **The AI never blocks the show.** Missing/invalid API key fails fast at startup with
+  an actionable message; API failure at runtime falls back to a canned greeting; a
+  missing `sox` degrades the spooky voice to normal audio. The porch keeps talking.
 
 ## The edge API surface
 
@@ -198,11 +222,12 @@ Design notes:
 
 | Concern | Choice | Decision record |
 |---------|--------|-----------------|
-| Person detection | YOLOv8s on Hailo-8 | [ADR-001](decisions/001-hailo-vs-imx500.md) |
-| Costume ID + comment | Claude Vision API (structured output) | [ADR-002](decisions/002-claude-vision.md) |
+| Person detection | YOLOv8s on Hailo-8, letterboxed input | [ADR-001](decisions/001-hailo-vs-imx500.md) |
+| Costume ID + comment | Claude Vision API (structured output, best-of-3 crops + costume history) | [ADR-002](decisions/002-claude-vision.md) |
 | Component decoupling | In-process asyncio event bus | [ADR-003](decisions/003-event-bus.md) |
 | Edge persistence | SQLite via SQLAlchemy | [ADR-004](decisions/004-sqlite-edge.md) |
 | Text-to-speech | Strategy pattern: Piper (default) / Google Cloud TTS | [ADR-005](decisions/005-tts-strategy.md) |
+| Spooky voice (optional) | Rotating `sox` audio filter, WAV→WAV, graceful skip | [04-speech.md](requirements/04-speech.md) (04-F8) |
 | Cloud database | Cloud SQL (PostgreSQL) | [ADR-006](decisions/006-cloud-sql.md) |
 | Live video to browser | MJPEG over HTTP | [ADR-007](decisions/007-mjpeg-vs-webrtc.md) |
 | Testability without hardware | Ports & adapters (mock camera/detector/audio) | [ADR-008](decisions/008-hardware-abstraction.md) |
