@@ -13,6 +13,7 @@ import json
 import logging
 import re
 import uuid
+from collections import deque
 from itertools import cycle
 
 from costume_spotter.events import CostumeIdentified, EventBus, NewVisitorSpotted, SystemStatus
@@ -35,6 +36,9 @@ class CostumeIdentifier:
         self._timeout = timeout_seconds
         self._detector_name = detector_name
         self._pretend = cycle(prompts.PRETEND_IDENTITIES)
+        # Tonight's greeted costumes, session-scoped, so repeat costumes get
+        # varied jokes (issue #10). Bounded: old entries age out naturally.
+        self._recent_costumes: deque[str] = deque(maxlen=20)
 
         if api_key:
             # Fail fast on an unusable key (same philosophy as 01-F6). Keys ride
@@ -75,6 +79,8 @@ class CostumeIdentifier:
             try:
                 costume, confidence, comment = await self._identify_with_claude(event.snapshot_jpeg)
                 source = "claude"
+                if costume:
+                    self._recent_costumes.append(costume)
                 self._bus.publish(SystemStatus(component="identifier", ok=True))
             except Exception as exc:
                 # Whatever went wrong (network, 5xx after retries, bad JSON), the
@@ -106,6 +112,7 @@ class CostumeIdentifier:
                 "data": base64.standard_b64encode(snapshot_jpeg).decode("ascii"),
             },
         }
+        user_prompt = prompts.build_user_prompt(list(self._recent_costumes))
         last_error: Exception | None = None
         for attempt in range(_MAX_RETRIES + 1):
             if attempt:
@@ -118,7 +125,7 @@ class CostumeIdentifier:
                         system=prompts.SYSTEM_PROMPT,
                         messages=[{"role": "user",
                                    "content": [image_block,
-                                               {"type": "text", "text": prompts.USER_PROMPT}]}],
+                                               {"type": "text", "text": user_prompt}]}],
                     ),
                     timeout=self._timeout,
                 )
