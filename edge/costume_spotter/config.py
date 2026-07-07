@@ -63,6 +63,7 @@ class Settings(BaseSettings):
     piper_voice_path: Path | None = None
     audio_device: str | None = None  # ALSA device on the Pi, e.g. "plughw:1,0"
     speech_queue_max: int = 3  # 04-F4: older unspoken comments beyond this are dropped
+    spooky_voice: bool = False  # issue #15: rotate spooky sox effects (needs `sox`)
 
     # --- Storage & privacy (docs/requirements/05-storage.md) ---
     data_dir: Path = Path("./data")

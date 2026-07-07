@@ -17,6 +17,7 @@ and never turn into overlapping chaos when three kids arrive at once.
 | 04-F5 | If the configured engine fails (Piper model missing, Google unreachable), log the failure, publish the event with `spoken: false`, and keep running — speech failure must not stop detection or logging. |
 | 04-F6 | Publish `CommentSpoken` after playback so the dashboard can show what was said and when. |
 | 04-F7 | In `dev` profile, audio output is a `NullAudioPlayer` that writes WAV files to a temp dir instead of playing them (laptops in CI have no speaker). |
+| 04-F8 | An optional audio filter (`SPOOKY_VOICE`, issue #15) transforms the synthesized WAV before playback — a `sox`-based rotating Halloween effect. It is engine-agnostic and must degrade to unmodified audio if `sox` is absent or fails (never silence the porch — a corollary of 04-F5). |
 
 ## Non-functional requirements
 

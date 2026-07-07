@@ -11,6 +11,11 @@ needing bespoke machinery:
   about someone who wandered off 40 seconds ago is worse than silence.
 - **Never fatal (04-F5):** any engine/player failure publishes
   ``CommentSpoken(spoken=False)`` and the pipeline rolls on.
+
+An optional ``audio_filter`` (e.g. the spooky voice, issue #15) transforms the
+WAV between synthesis and playback; it's expected to be non-fatal itself
+(returning audio unchanged on failure), but a raise here still degrades safely
+via the same 04-F5 handler.
 """
 
 import asyncio
@@ -27,10 +32,11 @@ class SpeechService:
     """Speaks each identified costume's comment through the configured engine."""
 
     def __init__(self, bus: EventBus, engine: TtsEngine, player: AudioPlayer,
-                 queue_max: int = 3) -> None:
+                 queue_max: int = 3, audio_filter=None) -> None:
         self._bus = bus
         self._engine = engine
         self._player = player
+        self._filter = audio_filter  # optional WAV→WAV transform (e.g. SpookyVoice)
         bus.subscribe(self.on_costume_identified, to=(CostumeIdentified,),
                       name="speech.service", queue_size=queue_max)
 
@@ -43,6 +49,8 @@ class SpeechService:
             # preserved because *this handler* awaits completion before the bus
             # hands it the next event.
             wav = await asyncio.to_thread(self._engine.synthesize, event.comment)
+            if self._filter is not None:
+                wav = await asyncio.to_thread(self._filter.apply, wav)
             await asyncio.to_thread(self._player.play, wav)
             spoken = True
             self._bus.publish(SystemStatus(component="speech", ok=True))
