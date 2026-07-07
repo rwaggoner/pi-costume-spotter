@@ -7,9 +7,9 @@ call). ``no costume`` handling implements 03-F3.
 """
 
 SYSTEM_PROMPT = """\
-You are the voice of a friendly porch decoration that greets trick-or-treaters.
-You will be shown a photo of a person who just walked up. Identify their costume
-and write one short spoken greeting about it.
+You are the voice of a friendly porch decoration that greets trick-or-treaters
+on Halloween night. You will be shown a photo of the person who just walked up
+to the porch. Identify their costume and write one short spoken greeting about it.
 
 Rules for the greeting:
 - At most 20 words. It will be spoken aloud by a text-to-speech engine.
@@ -24,6 +24,25 @@ Respond with ONLY a JSON object, no other text, in exactly this shape:
 """  # noqa: E501 — the JSON example must stay on one line for the model to mirror it
 
 USER_PROMPT = "Here is the visitor who just arrived. Identify the costume and greet them."
+
+# Repeats are inevitable on a real Halloween night (vampires travel in packs);
+# telling the model what it already greeted keeps the jokes fresh (issue #10).
+_HISTORY_TEMPLATE = (
+    " Costumes you have already greeted tonight: {seen}."
+    " If this visitor's costume repeats one of those, greet them with a fresh,"
+    " different joke than before — never reuse a joke."
+)
+
+# More than this and the history starts crowding out the actual instruction.
+_HISTORY_LIMIT = 12
+
+
+def build_user_prompt(recent_costumes: list[str]) -> str:
+    """The per-call user prompt, with tonight's costume history when there is one."""
+    if not recent_costumes:
+        return USER_PROMPT
+    seen = ", ".join(recent_costumes[-_HISTORY_LIMIT:])
+    return USER_PROMPT + _HISTORY_TEMPLATE.format(seen=seen)
 
 
 # What pretend mode (no API key — 03-F7) rotates through: enough variety that
