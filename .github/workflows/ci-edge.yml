@@ -11,7 +11,13 @@ on:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    # Windows is a deployment target too (docs/decisions/010-windows-target.md):
+    # paths, encodings and subprocess behavior differ there, so test on both.
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
     defaults:
       run:
         working-directory: edge
@@ -21,6 +27,19 @@ jobs:
         with:
           python-version: "3.12"
           cache: pip
-      - run: pip install -e ".[dev]"
+      # [webcam] + [onnx]: the HOG and ONNX detectors' import paths and decode
+      # logic get exercised (the ONNX contract tests skip without a model file).
+      - run: pip install -e ".[dev,webcam,onnx]"
       - run: ruff check .
       - run: pytest -q
+      - name: Parse the Windows PowerShell scripts
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $failed = $false
+          foreach ($f in Get-ChildItem deploy/windows/*.ps1) {
+            $errors = $null
+            [void][System.Management.Automation.Language.Parser]::ParseFile($f.FullName, [ref]$null, [ref]$errors)
+            foreach ($e in $errors) { Write-Error "$($f.Name): $($e.Message)"; $failed = $true }
+          }
+          if ($failed) { exit 1 }

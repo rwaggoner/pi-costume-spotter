@@ -16,6 +16,7 @@ why it was made.
 | [007](007-mjpeg-vs-webrtc.md) | Stream live video as MJPEG, not WebRTC/HLS |
 | [008](008-hardware-abstraction.md) | Ports & adapters at every hardware boundary (mock-first development) |
 | [009](009-kotlin-ingest.md) | Kotlin + Ktor on Cloud Run for the ingest service |
+| [010](010-windows-target.md) | Windows as a first-class target: webcam + ONNX YOLOv8 + winsound, numpy spooky voice |
 
 Format follows [Michael Nygard's ADR template](https://cognitect.com/blog/2011/11/15/documenting-architecture-decisions),
 extended with an explicit pros/cons table per option.
