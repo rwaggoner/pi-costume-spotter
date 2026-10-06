@@ -179,7 +179,7 @@ self-healing and loud failure over silent breakage:
   app starts (see [setup-pi.md](setup-pi.md) troubleshooting).
 - **The AI never blocks the show.** Missing/invalid API key fails fast at startup with
   an actionable message; API failure at runtime falls back to a canned greeting; a
-  missing `sox` degrades the spooky voice to normal audio. The porch keeps talking.
+  failing spooky-voice effect degrades to normal audio. The porch keeps talking.
 
 ## The edge API surface
 
@@ -227,7 +227,7 @@ Design notes:
 | Component decoupling | In-process asyncio event bus | [ADR-003](decisions/003-event-bus.md) |
 | Edge persistence | SQLite via SQLAlchemy | [ADR-004](decisions/004-sqlite-edge.md) |
 | Text-to-speech | Strategy pattern: Piper (default) / Google Cloud TTS | [ADR-005](decisions/005-tts-strategy.md) |
-| Spooky voice (optional) | Rotating `sox` audio filter, WAV→WAV, graceful skip | [04-speech.md](requirements/04-speech.md) (04-F8) |
+| Spooky voice (optional) | Rotating numpy audio filter (pitch/echo/reverb), WAV→WAV, graceful skip | [04-speech.md](requirements/04-speech.md) (04-F8) |
 | Cloud database | Cloud SQL (PostgreSQL) | [ADR-006](decisions/006-cloud-sql.md) |
 | Live video to browser | MJPEG over HTTP | [ADR-007](decisions/007-mjpeg-vs-webrtc.md) |
 | Testability without hardware | Ports & adapters (mock camera/detector/audio) | [ADR-008](decisions/008-hardware-abstraction.md) |
