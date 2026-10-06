@@ -39,7 +39,20 @@ dependencies = [
 
 [project.optional-dependencies]
 # Real webcam capture + HOG person detection for laptop demos.
-webcam = ["opencv-python-headless>=4.10"]
+# <5: OpenCV 5 moved HOGDescriptor out of the main module (HogDetector breaks).
+webcam = ["opencv-python-headless>=4.10,<5"]
+# YOLOv8 person detection via ONNX Runtime on the CPU — the windows profile's
+# detector, usable on any OS (docs/decisions/010-windows-target.md).
+onnx = ["onnxruntime>=1.18"]
+# Same detector on any DirectX 12 GPU (Windows only). Install INSTEAD of [onnx]:
+# onnxruntime and onnxruntime-directml conflict if both are installed.
+directml = ["onnxruntime-directml>=1.18"]
+# Everything the windows profile uses: webcam + ONNX detector + Piper TTS.
+windows = [
+    "opencv-python-headless>=4.10,<5",
+    "onnxruntime>=1.18",
+    "piper-tts>=1.3",  # 1.3+ (piper1): -i/-f file flags, Windows wheels
+]
 # Google Cloud integrations: optional TTS engine and Pub/Sub cloud sync.
 gcp = [
     "google-cloud-texttospeech>=2.16",

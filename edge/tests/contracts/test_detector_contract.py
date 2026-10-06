@@ -1,9 +1,12 @@
 """Detector contract tests (ADR-008): every available backend must honor base.py.
 
-Hardware-dependent backends (hailo) and optional-extra backends (hog) auto-skip
+Hardware-dependent backends (hailo) and optional-extra backends (hog, onnx) auto-skip
 where they can't run; the contract still holds for them on the Pi, where these
 same tests can be executed.
 """
+
+import os
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -19,6 +22,17 @@ def available_detectors():
         detectors.append(HogDetector())
     except (ImportError, RuntimeError):
         pass  # webcam extra not installed — fine off-Pi
+    # ONNX YOLOv8: runs wherever the [onnx] extra and a model file exist
+    # (set ONNX_TEST_MODEL, or export to edge/models/yolov8n.onnx). CI has no
+    # model — the decode logic is covered model-free in tests/test_onnx_yolo.py.
+    model = Path(os.environ.get("ONNX_TEST_MODEL", Path(__file__).parents[2] / "models"
+                                / "yolov8n.onnx"))
+    if model.is_file():
+        try:
+            from costume_spotter.detection.onnx_yolo import OnnxYoloDetector
+            detectors.append(OnnxYoloDetector(model))
+        except (ImportError, RuntimeError):
+            pass
     try:
         from costume_spotter.detection.hailo import HailoDetector  # noqa: F401
         # Constructing needs a HEF file + the HAT; covered by on-Pi runs only.

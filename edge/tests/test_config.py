@@ -25,6 +25,12 @@ def test_pi_profile_defaults_to_picamera2_and_hailo():
     assert settings.detector == "hailo"
 
 
+def test_windows_profile_defaults_to_webcam_and_onnx():
+    settings = make(edge_profile=Profile.WINDOWS)
+    assert settings.camera_source == "webcam"
+    assert settings.detector == "onnx"
+
+
 def test_explicit_values_override_the_profile():
     settings = make(edge_profile=Profile.PI, camera_source="webcam", detector="hog")
     assert settings.camera_source == "webcam"

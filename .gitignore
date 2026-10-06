@@ -16,6 +16,12 @@ data/
 *.db
 *.sqlite3
 
+# Model weights: downloaded/exported per machine, never committed. The YOLOv8
+# ONNX export carries Ultralytics' AGPL-3.0 terms (docs/decisions/010-windows-target.md).
+models/
+*.onnx
+*.hef
+
 # Python
 __pycache__/
 *.py[cod]
