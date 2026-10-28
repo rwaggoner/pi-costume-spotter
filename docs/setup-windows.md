@@ -19,7 +19,7 @@ works on Windows too.
 
 - Windows 10 or 11, 64-bit
 - [Python 3.11–3.14, 64-bit](https://www.python.org/downloads/windows/) — tick **Add python.exe to PATH**.
-  Newer versions (e.g. a 3.15 preview) don't work yet: ONNX Runtime has no Windows build for them.
+  Python 3.15 doesn't work yet: ONNX Runtime has no Windows build for it.
   Having one installed alongside is fine; the setup script picks a supported version.
 - [Node.js 20+](https://nodejs.org) — only to build the dashboard
 - A webcam and speakers

@@ -47,8 +47,8 @@ function Invoke-Checked {
 
 # --- 1. Python ---------------------------------------------------------------
 # Supported range is set by the binary dependencies: ONNX Runtime publishes
-# Windows wheels for 64-bit CPython 3.11-3.14 only, so a newer (e.g. 3.15
-# preview) or 32-bit Python fails at pip time with "from versions: none".
+# Windows wheels for 64-bit CPython 3.11-3.14 only (as of Oct 2026), so
+# Python 3.15 or a 32-bit Python fails at pip time with "from versions: none".
 # Raise $MaxPython when onnxruntime ships wheels for the next version.
 $MinPython = [version]"3.11"
 $MaxPython = [version]"3.14"
