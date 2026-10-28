@@ -18,7 +18,9 @@ works on Windows too.
 ## Prerequisites
 
 - Windows 10 or 11, 64-bit
-- [Python 3.11+](https://www.python.org/downloads/windows/) — tick **Add python.exe to PATH**
+- [Python 3.11–3.14, 64-bit](https://www.python.org/downloads/windows/) — tick **Add python.exe to PATH**.
+  Newer versions (e.g. a 3.15 preview) don't work yet: ONNX Runtime has no Windows build for them.
+  Having one installed alongside is fine; the setup script picks a supported version.
 - [Node.js 20+](https://nodejs.org) — only to build the dashboard
 - A webcam and speakers
 - (optional) an Anthropic API key — without one, costumes are "pretend" identified
@@ -130,4 +132,5 @@ For a dedicated porch PC, also turn on automatic sign-in.
 | `PIPER_VOICE_PATH not found` | Re-run `setup.ps1`, or fix the path in `.env` |
 | Low FPS | Expect roughly 8–15 FPS for `yolov8n` on a modern CPU. Try `-Gpu`, or lower `FRAME_WIDTH`/`FRAME_HEIGHT` |
 | Dashboard 404 at `/` | The dashboard isn't built: install Node.js and re-run `setup.ps1` |
+| `onnxruntime` … `from versions: none` during setup | The venv uses an unsupported Python (too new, or 32-bit). `setup.ps1` now detects this. Delete `edge\.venv`, make sure Python 3.11–3.14 64-bit is installed, and re-run |
 | Script blocked: "running scripts is disabled" | Launch it as shown, with `powershell -ExecutionPolicy Bypass -File ...` |
