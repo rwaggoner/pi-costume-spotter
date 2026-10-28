@@ -43,7 +43,9 @@ def build_frame_source(settings: Settings) -> FrameSource:
         return SyntheticSource(settings.frame_width, settings.frame_height)
     if settings.camera_source == "webcam":
         from costume_spotter.camera.opencv_source import WebcamSource
-        return WebcamSource(settings.frame_width, settings.frame_height)
+        return WebcamSource(settings.frame_width, settings.frame_height,
+                            device_index=settings.camera_index,
+                            backend=settings.camera_backend)
     if settings.camera_source == "picamera2":
         from costume_spotter.camera.picamera2_source import Picamera2Source
         return Picamera2Source(settings.frame_width, settings.frame_height)
@@ -62,6 +64,10 @@ def build_detector(settings: Settings) -> Detector:
         if settings.hailo_hef_path is None:
             raise ValueError("DETECTOR=hailo requires HAILO_HEF_PATH (docs/setup-pi.md §3)")
         return HailoDetector(settings.hailo_hef_path, settings.detection_confidence_threshold)
+    if settings.detector == "onnx":
+        from costume_spotter.detection.onnx_yolo import OnnxYoloDetector
+        return OnnxYoloDetector(settings.onnx_model_path, settings.detection_confidence_threshold,
+                                provider=settings.onnx_provider)
     raise ValueError(f"unknown DETECTOR: {settings.detector!r}")
 
 
@@ -82,6 +88,9 @@ def build_audio_player(settings: Settings) -> AudioPlayer:
     if settings.edge_profile is Profile.PI:
         from costume_spotter.speech.aplay import AplayAudioPlayer
         return AplayAudioPlayer(settings.audio_device)
+    if settings.edge_profile is Profile.WINDOWS:
+        from costume_spotter.speech.winsound_player import WinsoundAudioPlayer
+        return WinsoundAudioPlayer()
     from costume_spotter.speech.null import FileAudioPlayer
     return FileAudioPlayer(settings.audio_out_dir)
 

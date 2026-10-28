@@ -18,11 +18,18 @@ class Profile(StrEnum):
     """Which set of hardware adapters the composition root wires up.
 
     See docs/decisions/008-hardware-abstraction.md — this single value is what
-    makes the same codebase run on a laptop and on the Pi.
+    makes the same codebase run on a laptop, on the Pi, and on a Windows PC.
+    See docs/decisions/010-windows-target.md for the Windows profile.
     """
 
     DEV = "dev"
     PI = "pi"
+    WINDOWS = "windows"
+
+
+# Hardware each profile wires when CAMERA_SOURCE / DETECTOR are left unset.
+_PROFILE_CAMERA = {Profile.DEV: "synthetic", Profile.PI: "picamera2", Profile.WINDOWS: "webcam"}
+_PROFILE_DETECTOR = {Profile.DEV: "mock", Profile.PI: "hailo", Profile.WINDOWS: "onnx"}
 
 
 class Settings(BaseSettings):
@@ -39,14 +46,22 @@ class Settings(BaseSettings):
     # override once ran the synthetic test scene, exactly as the old defaults
     # said to — the profile must be the one switch that re-wires hardware.
     camera_source: str | None = None  # synthetic | webcam | picamera2
+    # Webcam only: which camera (0 = first) and which OpenCV capture backend.
+    # "auto" = DirectShow on Windows (opens in ~1 s and honors the resolution;
+    # the default Media Foundation backend can take 5-10 s), OpenCV's choice elsewhere.
+    camera_index: int = 0
+    camera_backend: str = "auto"  # auto | dshow | msmf | v4l2 | any
     frame_width: int = 1280
     frame_height: int = 720
     target_fps: float = 15.0
 
     # --- Detection (docs/requirements/01-detection.md) ---
-    detector: str | None = None  # mock | hog | hailo; None = follow the profile
+    detector: str | None = None  # mock | hog | hailo | onnx; None = follow the profile
     detection_confidence_threshold: float = 0.5  # 01-F5
     hailo_hef_path: Path | None = None
+    # ONNX YOLOv8 detector (windows profile; any machine with the [onnx] extra).
+    onnx_model_path: Path = Path("./models/yolov8n.onnx")
+    onnx_provider: str = "cpu"  # cpu | directml (needs the [directml] extra)
 
     # --- Costume identification (docs/requirements/03-identification.md) ---
     anthropic_api_key: str | None = None  # unset → pretend mode (03-F7)
@@ -61,9 +76,9 @@ class Settings(BaseSettings):
     # --- Speech (docs/requirements/04-speech.md) ---
     tts_engine: str = "null"  # piper | google | null
     piper_voice_path: Path | None = None
-    audio_device: str | None = None  # ALSA device on the Pi, e.g. "plughw:1,0"
+    audio_device: str | None = None  # ALSA device on the Pi, e.g. "plughw:1,0" (Pi only)
     speech_queue_max: int = 3  # 04-F4: older unspoken comments beyond this are dropped
-    spooky_voice: bool = False  # issue #15: rotate spooky sox effects (needs `sox`)
+    spooky_voice: bool = False  # issue #15: rotate spooky voice effects (pure numpy)
 
     # --- Storage & privacy (docs/requirements/05-storage.md) ---
     data_dir: Path = Path("./data")
@@ -83,9 +98,9 @@ class Settings(BaseSettings):
     def _profile_defaults(self) -> "Settings":
         """Resolve profile-dependent defaults (see camera_source comment above)."""
         if self.camera_source is None:
-            self.camera_source = "picamera2" if self.edge_profile is Profile.PI else "synthetic"
+            self.camera_source = _PROFILE_CAMERA[self.edge_profile]
         if self.detector is None:
-            self.detector = "hailo" if self.edge_profile is Profile.PI else "mock"
+            self.detector = _PROFILE_DETECTOR[self.edge_profile]
         return self
 
     # Derived paths — one place decides the on-disk layout under data_dir.

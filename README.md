@@ -74,6 +74,7 @@ Full architecture with sequence diagrams and decision flowcharts: **[docs/archit
 - **Setup guides:**
   - [Run everything on a laptop — no Pi needed](docs/setup-dev.md) (mock camera & detector)
   - [Raspberry Pi bring-up](docs/setup-pi.md) (Hailo drivers, AI camera, speaker, systemd)
+  - [Windows PC](docs/setup-windows.md) (webcam, YOLOv8 on ONNX Runtime, speaker, autostart — [ADR-010](docs/decisions/010-windows-target.md))
   - [GCP deployment](docs/setup-gcp.md) (Terraform, Cloud Run, Cloud SQL)
 
 ## Quick start (no hardware required)
@@ -105,6 +106,9 @@ costumes/comments, so the whole event pipeline is still demonstrable offline.
 | Raspberry Pi AI Camera (Sony IMX500) | Video source (its on-sensor NPU is a documented alternative detector — [ADR-001](docs/decisions/001-hailo-vs-imx500.md)) |
 | Hailo AI HAT+ (26 TOPS, Hailo-8) | Runs YOLOv8 person detection at full frame rate |
 | Any USB / I²S speaker | Voice output |
+
+**No Pi?** The same app runs on a Windows PC with a webcam: YOLOv8 on ONNX
+Runtime replaces the Hailo chip — see [docs/setup-windows.md](docs/setup-windows.md).
 
 ## Privacy
 
