@@ -83,20 +83,73 @@ The entire pipeline runs on a laptop using a webcam or sample video in place of 
 Pi camera, and a mock detector in place of the Hailo chip — see
 [ADR-008](docs/decisions/008-hardware-abstraction.md) for why the code is built this way.
 
+Pick the block for your shell. Run the backend commands from `edge/` and the
+frontend commands from `web/`, each in its own terminal.
+
+**Windows (PowerShell)**
+
+```powershell
+# Backend (from edge\)
+python -m venv .venv
+.venv\Scripts\Activate.ps1          # if scripts are blocked, run once:
+                                     #   Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
+pip install -e ".[dev]"
+Copy-Item .env.example .env         # then add ANTHROPIC_API_KEY (optional in dev)
+python -m costume_spotter           # starts on http://localhost:8000
+
+# Frontend (from web\)
+npm install
+npm run dev                         # dashboard on http://localhost:5173
+```
+
+**Windows (Command Prompt)**
+
+```bat
+:: Backend (from edge\)
+python -m venv .venv
+.venv\Scripts\activate.bat
+pip install -e ".[dev]"
+copy .env.example .env
+python -m costume_spotter
+
+:: Frontend (from web\)
+npm install
+npm run dev
+```
+
+**macOS / Linux**
+
 ```bash
 # Backend (from edge/)
-python -m venv .venv && . .venv/bin/activate   # Windows: .venv\Scripts\activate
+python3 -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
-copy .env.example .env                          # then add ANTHROPIC_API_KEY (optional in dev)
-python -m costume_spotter                       # starts on http://localhost:8000
+cp .env.example .env                # then add ANTHROPIC_API_KEY (optional in dev)
+python -m costume_spotter           # starts on http://localhost:8000
 
 # Frontend (from web/)
 npm install
-npm run dev                                     # dashboard on http://localhost:5173
+npm run dev                         # dashboard on http://localhost:5173
 ```
+
+You'll know the virtual environment is active when your prompt starts with `(.venv)`.
 
 Without an API key the identifier runs in "pretend" mode and produces canned
 costumes/comments, so the whole event pipeline is still demonstrable offline.
+
+### Windows PC with a real webcam and speaker
+
+To run the real thing on Windows (webcam, YOLOv8 person detection, speech
+through your speakers, autostart at login), a setup script handles everything
+for you. From the repository root in PowerShell:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File edge\deploy\windows\setup.ps1
+powershell -ExecutionPolicy Bypass -File edge\deploy\windows\export-model.ps1   # once
+cd edge; .venv\Scripts\python.exe -m costume_spotter
+```
+
+No activation needed: the script runs the venv's Python directly. Full guide:
+[docs/setup-windows.md](docs/setup-windows.md).
 
 ## Hardware
 
