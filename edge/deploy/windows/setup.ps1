@@ -46,27 +46,58 @@ function Invoke-Checked {
 }
 
 # --- 1. Python ---------------------------------------------------------------
-Step "Checking for Python 3.11+"
-$Python = $null
-foreach ($candidate in @(@("py", "-3"), @("python"))) {
-    $exe = $candidate[0]
-    if (-not (Get-Command $exe -ErrorAction SilentlyContinue)) { continue }
-    $pyArgs = @($candidate | Select-Object -Skip 1)
+# Supported range is set by the binary dependencies: ONNX Runtime publishes
+# Windows wheels for 64-bit CPython 3.11-3.14 only (as of Oct 2026), so
+# Python 3.15 or a 32-bit Python fails at pip time with "from versions: none".
+# Raise $MaxPython when onnxruntime ships wheels for the next version.
+$MinPython = [version]"3.11"
+$MaxPython = [version]"3.14"
+$Supported = "64-bit Python $MinPython-$MaxPython"
+
+function Get-PythonInfo {
+    # Returns @{ Version = [version]; Bits = 64 } for an interpreter, or $null.
+    param([string]$Exe, [string[]]$PrefixArgs)
     # The Microsoft Store "python" alias exists but fails; treat any error as "not this one".
     try {
-        $version = & $exe @pyArgs -c "import sys; print('%d.%d' % sys.version_info[:2])" 2>$null
+        $out = & $Exe @PrefixArgs -c "import sys, struct; print('%d.%d %d' % (sys.version_info[0], sys.version_info[1], struct.calcsize('P') * 8))" 2>$null
     } catch {
-        continue
+        return $null
     }
-    if ($LASTEXITCODE -eq 0 -and $version -and ([version]$version -ge [version]"3.11")) {
+    if ($LASTEXITCODE -ne 0 -or -not $out) { return $null }
+    $parts = "$out".Trim().Split(" ")
+    return @{ Version = [version]$parts[0]; Bits = [int]$parts[1] }
+}
+
+function Test-Supported($info) {
+    return $info -and $info.Bits -eq 64 -and
+           $info.Version -ge $MinPython -and $info.Version -le $MaxPython
+}
+
+Step "Checking for $Supported"
+$Python = $null
+# Ask the py launcher for specific versions, newest supported first: plain
+# `py -3` picks the newest installed Python, which may be too new.
+$candidates = @()
+for ($minor = $MaxPython.Minor; $minor -ge $MinPython.Minor; $minor--) {
+    $candidates += , @("py", "-3.$minor")
+}
+$candidates += , @("python")
+foreach ($candidate in $candidates) {
+    $exe = $candidate[0]
+    if (-not (Get-Command $exe -ErrorAction SilentlyContinue)) { continue }
+    $prefix = @($candidate | Select-Object -Skip 1)
+    $info = Get-PythonInfo $exe $prefix
+    if (Test-Supported $info) {
         $Python = $candidate
-        Ok "Python $version ($($candidate -join ' '))"
+        Ok "Python $($info.Version) $($info.Bits)-bit ($($candidate -join ' '))"
         break
     }
 }
 if (-not $Python) {
-    throw "Python 3.11+ not found. Install it from https://www.python.org/downloads/windows/ " +
-          "(tick 'Add python.exe to PATH'), then re-run this script."
+    throw "No $Supported found. Install Python $MaxPython (64-bit) from " +
+          "https://www.python.org/downloads/windows/ (tick 'Add python.exe to PATH'), " +
+          "then re-run this script. Newer Pythons are not supported yet because ONNX Runtime " +
+          "has no Windows build for them."
 }
 
 # --- 2. Virtual environment + packages -----------------------------------------
@@ -77,7 +108,16 @@ if (-not (Test-Path $VenvPython)) {
     Invoke-Checked $pyExe $pyArgs
     Ok "created"
 } else {
-    Ok "already exists"
+    # A venv made earlier by hand (e.g. `python -m venv .venv`) may use a
+    # Python that ONNX Runtime doesn't support; catch that before pip does.
+    $venvInfo = Get-PythonInfo $VenvPython @()
+    if (-not (Test-Supported $venvInfo)) {
+        $found = "an unknown Python"
+        if ($venvInfo) { $found = "Python $($venvInfo.Version) $($venvInfo.Bits)-bit" }
+        throw "edge\.venv uses $found, but this project needs $Supported. Delete it " +
+              "(Remove-Item -Recurse -Force edge\.venv) and re-run this script to rebuild it."
+    }
+    Ok "already exists (Python $($venvInfo.Version) $($venvInfo.Bits)-bit)"
 }
 
 Step "Installing packages (a few minutes the first time)"
