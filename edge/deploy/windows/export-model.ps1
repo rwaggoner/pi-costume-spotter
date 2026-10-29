@@ -45,25 +45,38 @@ if (Test-Path $Target) {
     exit 0
 }
 
-$Python = $null
-foreach ($candidate in @("py", "python")) {
-    if (Get-Command $candidate -ErrorAction SilentlyContinue) { $Python = $candidate; break }
+# Build the throwaway environment from the SAME Python as the app's venv.
+# setup.ps1 already chose a supported one; the newest Python on the machine
+# (e.g. 3.15) may lack prebuilt wheels for PyTorch/PyYAML, and pip then tries
+# to compile them and fails with "Microsoft Visual C++ 14.0 or greater is required".
+$VenvPython = Join-Path $EdgeDir ".venv\Scripts\python.exe"
+if (-not (Test-Path $VenvPython)) {
+    throw "edge\.venv not found - run setup.ps1 first (it picks a supported Python)."
 }
-if (-not $Python) { throw "Python not found - run setup.ps1 first." }
+$info = & $VenvPython -c "import sys, struct; print('%d.%d %d %s' % (sys.version_info[0], sys.version_info[1], struct.calcsize('P') * 8, sys._base_executable))"
+if ($LASTEXITCODE -ne 0 -or -not $info) { throw "Could not run $VenvPython - re-run setup.ps1." }
+$parts = "$info".Trim().Split(" ", 3)
+$version = [version]$parts[0]
+$bits = [int]$parts[1]
+$BasePython = $parts[2]
+if ($bits -ne 64 -or $version -lt [version]"3.11" -or $version -gt [version]"3.14") {
+    throw "edge\.venv uses Python $version $bits-bit, but the export needs 64-bit Python 3.11-3.14. " +
+          "Delete edge\.venv (Remove-Item -Recurse -Force edge\.venv), install 64-bit Python 3.14 " +
+          "if 'py -0p' doesn't list it, re-run setup.ps1, then this script."
+}
 
-Write-Host "==> Creating a throwaway export environment in $Work" -ForegroundColor Cyan
+Write-Host "==> Creating a throwaway export environment in $Work (Python $version)" -ForegroundColor Cyan
 if (Test-Path $Work) { Remove-Item -Recurse -Force $Work }
 New-Item -ItemType Directory -Force -Path $Work | Out-Null
-$pyArgs = @()
-if ($Python -eq "py") { $pyArgs = @("-3") }
-Invoke-Checked $Python ($pyArgs + @("-m", "venv", (Join-Path $Work "venv")))
+Invoke-Checked $BasePython @("-m", "venv", (Join-Path $Work "venv"))
 $WorkPython = Join-Path $Work "venv\Scripts\python.exe"
 
 try {
     Write-Host "==> Installing ultralytics + CPU PyTorch (large download, one time only)" -ForegroundColor Cyan
     Invoke-Checked $WorkPython @("-m", "pip", "install", "--quiet", "torch", "torchvision",
                                  "--index-url", "https://download.pytorch.org/whl/cpu")
-    Invoke-Checked $WorkPython @("-m", "pip", "install", "--quiet", "ultralytics", "onnx", "onnxslim")
+    Invoke-Checked $WorkPython @("-m", "pip", "install", "--quiet", "--prefer-binary",
+                                 "ultralytics", "onnx", "onnxslim")
 
     Write-Host "==> Exporting $Model to ONNX" -ForegroundColor Cyan
     Push-Location $Work
