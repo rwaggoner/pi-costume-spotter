@@ -36,10 +36,19 @@ function describe(event: WireEvent): string {
         : `Group of ${event.visitors.length} — identifying them together…`;
     case "GreetingReady":
       return `Greeting: “${event.text}”`;
-    case "CostumeIdentified":
+    case "CostumeIdentified": {
+      // Pretend mode (no API key) cycles canned costumes without looking at
+      // the photo; say so, so nobody mistakes it for the AI's answer.
+      const note =
+        event.source === "pretend"
+          ? " [PRETEND: no API key, not a real identification]"
+          : event.source === "fallback"
+            ? " [AI unreachable: placeholder]"
+            : "";
       return event.costume
-        ? `Identified: ${event.costume} (${event.confidence}) — “${event.comment}”`
-        : `No costume — “${event.comment}”`;
+        ? `Identified: ${event.costume} (${event.confidence}) — “${event.comment}”${note}`
+        : `No costume — “${event.comment}”${note}`;
+    }
     case "SightingLogged":
       return `Sighting saved${event.snapshot_file ? " with snapshot" : ""}`;
     case "CommentSpoken":
