@@ -60,6 +60,10 @@ class Settings(BaseSettings):
     detection_confidence_threshold: float = 0.5  # 01-F5
     # 01-F7: also greet dogs and cats (onnx and hailo detectors; COCO classes).
     detect_pets: bool = True
+    # 01-F8: ignore visitors shorter than this fraction of the frame height
+    # (too far away to identify). Lower it if your camera is far from the door.
+    min_person_height: float = 0.2
+    min_pet_height: float = 0.1
     hailo_hef_path: Path | None = None
     # ONNX YOLOv8 detector (windows profile; any machine with the [onnx] extra).
     onnx_model_path: Path = Path("./models/yolov8n.onnx")

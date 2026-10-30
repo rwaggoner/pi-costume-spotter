@@ -7,7 +7,10 @@ everyone plus a short shout-out per visitor. A lone visitor is a group of one,
 where the greeting is the comment. Visitors can be pets (01-F7, 03-F11).
 
 The identification guidance implements 03-F10 (specific characters, props as
-clues, a best guess even from a dark porch shot rather than a vague label).
+clues, a best guess even from a dark porch shot rather than a vague label) and
+03-F12 (list visible clues before deciding; "no costume" only for plain
+clothes; these came from real porch tests where the model said "no costume"
+while its own comment praised a "cozy monster blanket").
 The tone rules implement 03-F4 (family-friendly, short, kind), the JSON shape
 implements 03-F2/F9 (labels + confidences + words in ONE call), and ``null``
 costume handling implements 03-F3.
@@ -21,6 +24,9 @@ or pets (dogs and cats). Identify each costume and write words to be spoken
 aloud by a text-to-speech engine.
 
 How to identify a costume:
+- Look first, then decide. For each visitor, write "clues": a short list of
+  what you can actually see (colors, mask, face paint, hat, wig, wings, cape,
+  onesie, held props, emblems, text). Then name the costume FROM those clues.
 - Be as SPECIFIC as the evidence allows. Name the character and where they are
   from when you recognize them: "Elsa from Frozen", not "princess"; "Spider-Man
   (Miles Morales)", not "superhero"; "Inflatable T-Rex", not "dinosaur".
@@ -28,7 +34,14 @@ How to identify a costume:
   color, hats, wings, capes, props held in hand (wand, lightsaber, pitchfork,
   trick-or-treat bag), logos and emblems, and signature color combinations.
 - Homemade and partial costumes count. Cardboard armor, a sheet with eye holes,
-  cat ears with whiskers drawn on: name what it is meant to be.
+  cat ears with whiskers drawn on, an animal or monster onesie, a blanket worn
+  as a cape, devil horns on a headband: name what it is meant to be.
+- "costume": null is ONLY for everyday clothes with NO costume element at all
+  (plain hoodie, jeans, t-shirt, jacket). If your clues include even one
+  costume element (mask, face paint, costume hat, ears, horns, wings, cape,
+  wig, onesie, prop), you MUST name a costume, even a partial one, with "low"
+  confidence if unsure. Never call something a costume in the words while
+  setting "costume" to null.
 - The photos come from a porch camera at night, so they may be dark, grainy or
   slightly blurred. Still give your single best guess; use confidence "low"
   when unsure, rather than a vague label like "costume" or "outfit".
@@ -59,11 +72,12 @@ Rules for all words:
 - Compliment or joke about the COSTUME, never about the person's body, face,
   age, or anything they didn't choose to wear.
 - If a person is NOT wearing a costume, set their "costume" to null and keep
-  their words a kind generic welcome (do not pretend they're in a costume).
+  their words a short, warm welcome. Do not pretend they're in a costume, and
+  do not comment on their everyday clothes ("nice shirt").
 
 Respond with ONLY a JSON object, no other text, in exactly this shape, with one
 entry in "people" per photo (pets included), in photo order:
-{"greeting": "the greeting", "people": [{"costume": "short costume name or null", "confidence": "high|medium|low", "shout_out": "the shout-out"}]}
+{"greeting": "the greeting", "people": [{"clues": "what you can see", "costume": "short costume name or null", "confidence": "high|medium|low", "shout_out": "the shout-out"}]}
 """  # noqa: E501 — the JSON example must stay on one line for the model to mirror it
 
 

@@ -18,6 +18,7 @@ left for the API server and TTS.
 | 01-F5 | Detections below a configurable confidence threshold (default 0.5) are discarded at the source. |
 | 01-F6 | Detector failures (driver missing, model file absent) must fail fast at startup with an actionable error message, not degrade silently. |
 | 01-F7 | **Pets:** with `DETECT_PETS=true` (default), the ONNX and Hailo detectors also report dogs and cats (COCO classes 16 and 15), labeled on each `Detection`. Duplicate suppression runs per class, so a kid holding a dog stays two detections. The tracker only matches boxes of the same kind, so a pet at a kid's feet is its own visitor and joins the kid's group. |
+| 01-F8 | **Close enough to identify:** people shorter than `MIN_PERSON_HEIGHT` of the frame height (default 0.2) and pets shorter than `MIN_PET_HEIGHT` (default 0.1) are not tracked or sent for identification; they're picked up when they come closer. The live overlay still shows them. (Field data: 40 px boxes produced "Ninja" and "no costume" guesses; every named costume came from boxes ≥ ~145 px of 720.) |
 
 ## Non-functional requirements
 

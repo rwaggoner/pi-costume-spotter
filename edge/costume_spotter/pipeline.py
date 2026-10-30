@@ -43,12 +43,17 @@ class FramePipeline:
     def __init__(self, bus: EventBus, source: FrameSource, detector: Detector,
                  tracker: VisitorTracker, *, target_fps: float,
                  confidence_threshold: float,
-                 grouper: GroupAssembler | None = None) -> None:
+                 grouper: GroupAssembler | None = None,
+                 min_person_height: float = 0.0, min_pet_height: float = 0.0) -> None:
         self._bus = bus
         self._source = source
         self._detector = detector
         self._tracker = tracker
         self._grouper = grouper or GroupAssembler()
+        # 01-F8: boxes shorter than these fractions of the frame height are too
+        # far away (or not a person at all) to identify a costume from.
+        self._min_person_height = min_person_height
+        self._min_pet_height = min_pet_height
         self._frame_budget = 1.0 / target_fps
         self._threshold = confidence_threshold
         self._fps = 0.0
@@ -96,8 +101,11 @@ class FramePipeline:
         detections = [d for d in detections if d.confidence >= self._threshold]
 
         # Tracking and grouping are fast pure math (02-N1) — no thread hop needed.
+        # Only visitors close enough to identify are tracked (01-F8); the live
+        # overlay below still shows every detection.
         now = time.monotonic()
-        new_visitors = self._tracker.update(detections, frame, now=now)
+        near = self.close_enough(detections, frame.shape[0])
+        new_visitors = self._tracker.update(near, frame, now=now)
         groups = self._grouper.update(new_visitors, self._tracker.pending_count(), now)
         for group in groups:
             await self._publish_group(group)
@@ -107,6 +115,18 @@ class FramePipeline:
         jpeg = await asyncio.to_thread(imaging.encode_jpeg, frame, 80)
         self._bus.publish(FrameProcessed(jpeg=jpeg, detections=tuple(detections),
                                          fps=round(self._fps, 1)))
+
+    def close_enough(self, detections: list, frame_height: int) -> list:
+        """Drop people/pets too small in the frame to identify (01-F8).
+
+        Real porch data: every box Claude named a costume from was >= ~145 px
+        tall in a 720 px frame, while 40 px boxes (someone at the back of the
+        room, or not a person at all) came back as "Ninja" or "no costume" and
+        cost an API call each. A visitor who walks closer is picked up then.
+        """
+        def minimum(label: str) -> float:
+            return self._min_person_height if label == "person" else self._min_pet_height
+        return [d for d in detections if d.box.height >= minimum(d.label) * frame_height]
 
     async def _publish_group(self, group: list[NewVisitor]) -> None:
         """One NewVisitorSpotted per person (dashboard log), then the GroupSpotted

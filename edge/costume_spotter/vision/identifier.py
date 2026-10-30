@@ -43,6 +43,7 @@ class PersonReading:
     costume: str | None  # None = regular clothes (03-F3)
     confidence: str
     shout_out: str
+    clues: str = ""  # what Claude saw before deciding (03-F12) — logged, for tuning
 
 
 @dataclass(frozen=True)
@@ -195,14 +196,19 @@ class CostumeIdentifier:
                 response = await asyncio.wait_for(
                     self._client.messages.create(
                         model=self._model,
-                        # Greeting ~40 tokens + ~35 per person, with headroom.
-                        max_tokens=120 + 60 * len(snapshots),
+                        # Greeting ~40 tokens, then ~70 per visitor (clues + costume
+                        # + shout-out), with headroom.
+                        max_tokens=150 + 110 * len(snapshots),
                         system=prompts.SYSTEM_PROMPT,
                         messages=[{"role": "user", "content": content}],
                     ),
                     timeout=self._timeout,
                 )
-                return self._parse(response.content[0].text, len(snapshots))
+                reading = self._parse(response.content[0].text, len(snapshots))
+                for index, person in enumerate(reading.people, start=1):
+                    logger.info("visitor %d: clues=%r -> costume=%r (%s)", index, person.clues,
+                                person.costume, person.confidence)
+                return reading
             except UnicodeEncodeError:
                 # Encoding failures happen before any network I/O and can never
                 # succeed on retry (defense in depth behind the __init__ key
@@ -256,4 +262,5 @@ def _person(raw: dict) -> PersonReading:
     confidence = str(raw.get("confidence", "")).lower()
     if confidence not in _VALID_CONFIDENCE:
         confidence = "low"
-    return PersonReading(costume, confidence, str(raw.get("shout_out") or "").strip())
+    return PersonReading(costume, confidence, str(raw.get("shout_out") or "").strip(),
+                         clues=str(raw.get("clues") or "").strip()[:300])

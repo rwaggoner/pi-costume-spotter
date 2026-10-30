@@ -257,3 +257,18 @@ def test_prompt_tells_claude_about_pets():  # 03-F11
     assert "Pets:" in prompts.SYSTEM_PROMPT
     assert prompts.photo_label(2, "cat") == "Visitor 2 (cat):"
     assert prompts.photo_label(1, "") == "Visitor 1:"
+
+
+def test_parse_keeps_the_clues_claude_saw():  # 03-F12
+    result = CostumeIdentifier._parse(
+        '{"greeting": "Rawr!", "people": [{"clues": "green onesie with spikes, hood with eyes",'
+        ' "costume": "Dinosaur onesie", "confidence": "medium", "shout_out": "Rawr!"}]}')
+    assert result.people[0].clues.startswith("green onesie")
+    assert result.people[0].costume == "Dinosaur onesie"
+
+
+def test_prompt_forbids_no_costume_when_costume_pieces_are_visible():  # 03-F12
+    text = prompts.SYSTEM_PROMPT
+    assert '"clues"' in text  # clues come before the costume in the JSON shape
+    assert text.index('"clues"') < text.index('"costume": "short costume name or null"')
+    assert "ONLY for everyday clothes" in text and "MUST name a costume" in text

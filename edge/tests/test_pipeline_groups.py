@@ -60,3 +60,16 @@ async def test_friends_a_frame_apart_form_one_group():
     assert {v.group_id for v in visitors} == {groups[0].group_id}
     assert all(v.snapshot_jpeg[:2] == b"\xff\xd8" for v in groups[0].visitors)
     await bus.stop()
+
+
+def test_far_away_visitors_are_not_identified():  # 01-F8
+    from costume_spotter.events.events import BoundingBox, Detection
+
+    pipeline = FramePipeline(EventBus(), Blank(), Scripted(), VisitorTracker(),
+                             target_fps=10, confidence_threshold=0.5,
+                             min_person_height=0.2, min_pet_height=0.1)
+    tiny_person = Detection(box=BoundingBox(0, 0, 47, 40), confidence=0.9)
+    near_person = Detection(box=BoundingBox(0, 0, 150, 300), confidence=0.9)
+    small_dog = Detection(box=BoundingBox(0, 0, 90, 80), confidence=0.9, label="dog")
+    kept = pipeline.close_enough([tiny_person, near_person, small_dog], frame_height=720)
+    assert kept == [near_person, small_dog]  # 80 px dog >= 10% of 720; 40 px person < 20%

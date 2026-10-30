@@ -125,7 +125,9 @@ def build_application(settings: Settings) -> FastAPI:
     pipeline = FramePipeline(bus, source, detector, tracker,
                              target_fps=settings.target_fps,
                              confidence_threshold=settings.detection_confidence_threshold,
-                             grouper=grouper)
+                             grouper=grouper,
+                             min_person_height=settings.min_person_height,
+                             min_pet_height=settings.min_pet_height)
 
     # Reaction: identification + speech (both are pure bus subscribers)
     identifier = CostumeIdentifier(bus, api_key=settings.anthropic_api_key,
