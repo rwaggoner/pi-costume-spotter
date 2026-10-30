@@ -39,3 +39,12 @@ def test_without_an_api_key_it_says_how_to_fix_it(tmp_path, monkeypatch, capsys)
     monkeypatch.setattr("sys.argv", ["try_photo", str(photo(tmp_path, "a.jpg"))])
     assert try_photo.main() == 2
     assert "ANTHROPIC_API_KEY" in capsys.readouterr().err
+
+
+def test_a_folder_expands_to_the_photos_inside(tmp_path):
+    folder = tmp_path / "set"
+    folder.mkdir()
+    for name in ["b.png", "a.jpg", "notes.txt"]:
+        (folder / name).write_bytes(b"x")
+    single = photo(tmp_path, "solo.jpg")
+    assert [p.name for p in try_photo.expand([folder, single])] == ["a.jpg", "b.png", "solo.jpg"]

@@ -96,6 +96,7 @@ Halloween night: one photo per person, cropped to the person for best results.
 ```powershell
 cd edge
 .venv\Scripts\python.exe -m costume_spotter.vision.try_photo witch.jpg robot.jpg
+.venv\Scripts\python.exe -m costume_spotter.vision.try_photo C:\Users\ryan\Pictures\costume-test
 .venv\Scripts\python.exe -m costume_spotter.vision.try_photo --group kid1.jpg kid2.jpg
 .venv\Scripts\python.exe -m costume_spotter.vision.try_photo --model claude-haiku-5-5 witch.jpg
 ```

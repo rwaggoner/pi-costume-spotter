@@ -1,6 +1,7 @@
 """Try costume identification on your own photos — no porch, camera or speaker needed.
 
     python -m costume_spotter.vision.try_photo witch.jpg robot.jpg
+    python -m costume_spotter.vision.try_photo costume-test   (every photo in a folder)
     python -m costume_spotter.vision.try_photo --group kid1.jpg kid2.jpg kid3.jpg
     python -m costume_spotter.vision.try_photo --model claude-haiku-5-5 witch.jpg
 
@@ -29,6 +30,19 @@ from costume_spotter.events import EventBus
 from costume_spotter.pipeline import _encode_snapshot
 from costume_spotter.vision.identifier import CostumeIdentifier
 
+IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png", ".webp", ".bmp"}
+
+
+def expand(paths: list[Path]) -> list[Path]:
+    """Folders become the photos inside them (sorted); files pass through."""
+    out: list[Path] = []
+    for path in paths:
+        if path.is_dir():
+            out += sorted(p for p in path.iterdir() if p.suffix.lower() in IMAGE_SUFFIXES)
+        else:
+            out.append(path)
+    return out
+
 
 def _load(path: Path) -> bytes:
     return _encode_snapshot(np.asarray(Image.open(path).convert("RGB")))
@@ -56,7 +70,8 @@ def main() -> int:
     parser = argparse.ArgumentParser(
         prog="python -m costume_spotter.vision.try_photo",
         description="Identify costumes in photos with the same prompt the porch uses.")
-    parser.add_argument("photos", nargs="+", type=Path, help="one photo per person")
+    parser.add_argument("photos", nargs="+", type=Path,
+                        help="one photo per person, or a folder of them")
     parser.add_argument("--group", action="store_true",
                         help="send all photos as one group (one call, one greeting)")
     parser.add_argument("--model", help="override CLAUDE_MODEL from .env")
@@ -67,11 +82,15 @@ def main() -> int:
         print("ANTHROPIC_API_KEY isn't set: add it to edge/.env (and remove the leading #).",
               file=sys.stderr)
         return 2
-    missing = [p for p in args.photos if not p.is_file()]
+    photos = expand(args.photos)
+    missing = [p for p in photos if not p.is_file()]
     if missing:
         print(f"not found: {', '.join(map(str, missing))}", file=sys.stderr)
         return 2
-    asyncio.run(_run(args.photos, args.group, args.model or settings.claude_model, settings))
+    if not photos:
+        print("no photos found (.jpg, .jpeg, .png, .webp, .bmp)", file=sys.stderr)
+        return 2
+    asyncio.run(_run(photos, args.group, args.model or settings.claude_model, settings))
     return 0
 
 
