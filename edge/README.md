@@ -29,6 +29,7 @@ Mirrors the architecture diagram ([docs/architecture.md](../docs/architecture.md
 ```bash
 pip install -e ".[dev]"      # add [webcam], [onnx], [windows] and/or [gcp] extras as needed
 python -m costume_spotter    # http://localhost:8000 (API docs at /docs)
+python -m costume_spotter.vision.try_photo a.jpg b.jpg   # test identification on photos
 pytest                       # no hardware required
 ruff check .
 ```

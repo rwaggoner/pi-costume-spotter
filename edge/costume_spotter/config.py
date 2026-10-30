@@ -65,7 +65,10 @@ class Settings(BaseSettings):
 
     # --- Costume identification (docs/requirements/03-identification.md) ---
     anthropic_api_key: str | None = None  # unset → pretend mode (03-F7)
-    claude_model: str = "claude-haiku-4-5"
+    # Sonnet: names specific characters and reads props/homemade costumes far
+    # better than Haiku, for ~1 s more per greeting (ADR-002). claude-haiku-5-5
+    # is the faster, cheaper alternative.
+    claude_model: str = "claude-sonnet-5-5"
     identify_timeout_seconds: float = 15.0  # 03-F6
 
     # --- Tracking (docs/requirements/02-tracking.md) ---

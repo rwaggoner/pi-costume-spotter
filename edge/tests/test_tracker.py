@@ -4,6 +4,8 @@ The tracker takes ``now`` as a parameter and does no I/O, so every scenario here
 is a plain scripted sequence of frames — no sleeps, no cameras (02-N3).
 """
 
+import numpy as np
+
 from costume_spotter.tracking import VisitorTracker
 from tests.conftest import detection, frame
 
@@ -104,7 +106,7 @@ def test_snapshot_is_from_the_largest_appearance():  # 02-F5: closest ≈ bigges
         announced += tracker.update([detection(100, 100, w, h)], F, now=i * 0.1)
     assert len(announced) == 1
     snap_h, snap_w = announced[0].snapshot.shape[:2]
-    # Crop = box + 15% padding on each side (imaging.crop_box), clipped to frame.
+    # Crop = box + 25% padding on each side (imaging.crop_box), clipped to frame.
     assert snap_w >= 60 and snap_h >= 120
 
 
@@ -114,3 +116,17 @@ def test_memory_is_bounded_by_retirement():  # 02-N2
     for i in range(50):
         tracker.update([detection(10 + i * 4, 10)], F, now=float(i * 40))  # 40s apart
     assert len(tracker._visitors) <= 1  # noqa: SLF001 — asserting the bound is the test
+
+
+def test_snapshot_prefers_a_sharp_frame_over_a_slightly_bigger_blurry_one():  # 02-F5
+    """Same person, two frames: a crisp one, then a slightly closer but blurred
+    (mid-stride) one. The crisp frame is the better photo to identify from."""
+    rng = np.random.default_rng(0)
+    crisp = np.zeros((480, 640, 3), np.uint8)
+    crisp[100:300, 100:200] = rng.integers(0, 255, (200, 100, 3), dtype=np.uint8)  # detailed
+    blurry = np.zeros((480, 640, 3), np.uint8)
+    blurry[100:310, 100:205] = 128  # bigger, but no detail at all
+    tracker = make_tracker(min_hits=2)
+    tracker.update([detection(100, 100, 100, 200)], crisp, now=0.0)
+    [visitor] = tracker.update([detection(100, 100, 105, 210)], blurry, now=0.1)
+    assert visitor.snapshot.std() > 30  # the detailed crop, not the flat grey one

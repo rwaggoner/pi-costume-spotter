@@ -42,8 +42,13 @@ task. [Requirements 03](../requirements/03-identification.md).
 2. **Pretend mode (03-F7):** with no API key, a stub returns rotating canned results
    so dev/CI runs the full event flow at zero cost.
 
-Model: `claude-haiku-4-5` — the latency/cost sweet spot; a config flag can raise it to
-a bigger model for higher-quality comments.
+Model: `claude-sonnet-5-5` (`CLAUDE_MODEL`). The project started on
+`claude-haiku-4-5` for latency and cost; it moved to Sonnet because identifying
+the costume correctly matters more than the time saved. The aim is "Elsa", not
+"princess": Sonnet is the stronger model at naming specific characters and
+reading props and homemade costumes. Sonnet costs roughly
+a second more per greeting, and well under a cent per visitor; set
+`CLAUDE_MODEL=claude-haiku-5-5` when speed or cost matters more than specificity.
 
 ## Consequences
 

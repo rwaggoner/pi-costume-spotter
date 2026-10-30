@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-    Start the Costume Spotter automatically when you log in (docs/setup-windows.md section 6).
+    Start the Costume Spotter automatically when you log in (docs/setup-windows.md section 7).
 
 .DESCRIPTION
     Registers a Task Scheduler task, "Costume Spotter", that runs run-spotter.ps1

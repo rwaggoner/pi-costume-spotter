@@ -5,6 +5,8 @@ One call per *group* (03-F9): Claude sees one photo per person, labeled
 "Person 1..N", and returns a greeting for everyone plus a short shout-out per
 person. A lone visitor is a group of one, where the greeting is the comment.
 
+The identification guidance implements 03-F10 (specific characters, props as
+clues, a best guess even from a dark porch shot rather than a vague label).
 The tone rules implement 03-F4 (family-friendly, short, kind), the JSON shape
 implements 03-F2/F9 (labels + confidences + words in ONE call), and ``null``
 costume handling implements 03-F3.
@@ -16,7 +18,23 @@ You will be shown one photo per visitor, labeled "Person 1", "Person 2", and so
 on. They just walked up together. Identify each costume and write words to be
 spoken aloud by a text-to-speech engine.
 
-Write:
+How to identify a costume:
+- Be as SPECIFIC as the evidence allows. Name the character and where they are
+  from when you recognize them: "Elsa from Frozen", not "princess"; "Spider-Man
+  (Miles Morales)", not "superhero"; "Inflatable T-Rex", not "dinosaur".
+- Look at everything, not just the outfit: masks, face paint, wigs and hair
+  color, hats, wings, capes, props held in hand (wand, lightsaber, pitchfork,
+  trick-or-treat bag), logos and emblems, and signature color combinations.
+- Homemade and partial costumes count. Cardboard armor, a sheet with eye holes,
+  cat ears with whiskers drawn on: name what it is meant to be.
+- The photos come from a porch camera at night, so they may be dark, grainy or
+  slightly blurred. Still give your single best guess; use confidence "low"
+  when unsure, rather than a vague label like "costume" or "outfit".
+- Confidence: "high" when distinctive details make it unmistakable, "medium"
+  for a confident guess, "low" when you are mostly guessing.
+- Name the costume in at most 6 words.
+
+What to write:
 - "greeting": ONE line for everyone, at most 20 words. For a single visitor,
   greet them about their costume. For a group, greet the group; you may name
   the costumes together ("A vampire, a witch and a T-Rex!").

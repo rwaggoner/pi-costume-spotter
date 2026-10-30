@@ -88,7 +88,19 @@ Options: `-Model yolov8s` is more accurate and about 3× slower (then set
 nothing extra to install. To audition the presets:
 `.venv\Scripts\python.exe -m costume_spotter.speech.spooky $env:TEMP\t.wav`
 
-## 5. Run it
+## 5. Check identification on a few photos (optional)
+
+With your API key in `edge\.env`, test what the AI says about any photos before
+Halloween night: one photo per person, cropped to the person for best results.
+
+```powershell
+cd edge
+.venv\Scripts\python.exe -m costume_spotter.vision.try_photo witch.jpg robot.jpg
+.venv\Scripts\python.exe -m costume_spotter.vision.try_photo --group kid1.jpg kid2.jpg
+.venv\Scripts\python.exe -m costume_spotter.vision.try_photo --model claude-haiku-5-5 witch.jpg
+```
+
+## 6. Run it
 
 ```powershell
 cd edge
@@ -102,7 +114,7 @@ log. `/api/health` shows `detector: onnx-yolov8n`.
 From another device on your network, use `http://<pc-name>:8000`. The first run
 triggers a Windows Firewall prompt; allow **private networks** only.
 
-## 6. Start automatically at login
+## 7. Start automatically at login
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File edge\deploy\windows\install-autostart.ps1

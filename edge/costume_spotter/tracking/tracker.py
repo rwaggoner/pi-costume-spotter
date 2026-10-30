@@ -34,10 +34,10 @@ class _TrackedVisitor:
     # restarts (02-F3).
     misses: int = 0
     announced: bool = False
-    # Best snapshot so far = the frame where they appeared largest (≈ closest,
-    # most visible — 02-F5). Kept only until announcement, then freed.
+    # Best snapshot so far (02-F5): the frame scoring highest on size (≈ closest)
+    # times sharpness (not blurred mid-stride). Kept only until announcement.
     best_crop: np.ndarray | None = None
-    best_area: int = 0
+    best_score: float = -1.0
 
 
 @dataclass(frozen=True)
@@ -121,9 +121,18 @@ class VisitorTracker:
             self._remember_best_crop(v, det.box, frame)
 
     def _remember_best_crop(self, v: _TrackedVisitor, box: BoundingBox, frame: np.ndarray) -> None:
-        if box.area > v.best_area:
-            v.best_area = box.area
-            v.best_crop = imaging.crop_box(frame, box).copy()
+        """Keep the crop most likely to be identified correctly (02-F5).
+
+        Bigger is better (closer, more detail) and sharper is better (a blurred
+        mid-stride frame hides the very details that name a costume). sqrt
+        softens sharpness so it breaks near-ties in size rather than dominating:
+        a crop 4x blurrier must be 2x bigger to win.
+        """
+        crop = imaging.crop_box(frame, box)
+        score = box.area * (imaging.sharpness(crop) + 1.0) ** 0.5
+        if score > v.best_score:
+            v.best_score = score
+            v.best_crop = crop.copy()
 
     def _just_became_announceable(self, v: _TrackedVisitor) -> bool:
         return not v.announced and v.consecutive_hits >= self.min_hits

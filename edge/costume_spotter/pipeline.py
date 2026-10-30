@@ -30,7 +30,9 @@ from costume_spotter.tracking import GroupAssembler, VisitorTracker
 from costume_spotter.tracking.tracker import NewVisitor
 
 # Longest side of the snapshot sent to Claude and stored (see imaging.shrink).
-SNAPSHOT_MAX_SIDE = 512
+# 1024 keeps the small details that name a costume (logos, masks, face paint);
+# 512 was faster to upload but threw those away.
+SNAPSHOT_MAX_SIDE = 1024
 
 logger = logging.getLogger(__name__)
 
@@ -127,4 +129,5 @@ class FramePipeline:
 
 
 def _encode_snapshot(crop) -> bytes:
-    return imaging.encode_jpeg(imaging.shrink(crop, SNAPSHOT_MAX_SIDE), 88)
+    enhanced = imaging.enhance_for_identification(imaging.shrink(crop, SNAPSHOT_MAX_SIDE))
+    return imaging.encode_jpeg(enhanced, 90)
