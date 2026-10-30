@@ -22,6 +22,7 @@ hardware can do well ([ADR-002](../decisions/002-claude-vision.md)).
 | 03-F8 | Retry transient API failures (429/5xx/network) with short backoff (0.5 s, then 1 s), max 2 retries — the visitor is standing at the door. |
 | 03-F9 | **One call per group:** a `GroupSpotted` is identified with ONE request containing a photo per person (labeled "Person 1..N", ≤ 1024 px). The response holds a greeting for everyone (≤ 20 words) and, per person, a costume label, confidence and a shout-out (≤ 8 words). Each person still produces their own `CostumeIdentified`; the words to speak go out once as `GreetingReady`. |
 | 03-F10 | **Specific identification:** the prompt asks for the most specific name the evidence supports ("Elsa from Frozen", not "princess"), to use masks, face paint, props, emblems and colors as clues, to name homemade costumes for what they're meant to be, and to give a best guess with `low` confidence rather than a vague label. `python -m costume_spotter.vision.try_photo` runs the same prompt on any photos. |
+| 03-F11 | **Pets:** each photo is labeled with its visitor type ("Visitor 2 (dog):"). A pet in a costume is named the same specific way, including the animal ("Dog dressed as a hot dog"); a pet without one gets `costume: null` and a compliment about the pet itself. Pets are included in group greetings. |
 
 ## Non-functional requirements
 

@@ -1,4 +1,4 @@
-"""YOLOv8 person detector on ONNX Runtime — the windows profile's detector (ADR-010).
+"""YOLOv8 person (and pet) detector on ONNX Runtime — the windows profile's detector (ADR-010).
 
 The Hailo detector's stand-in on hardware without a Hailo chip: same model
 family (YOLOv8), same Detector contract, so tracking/identification/dashboard
@@ -22,10 +22,9 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 
-from costume_spotter.detection.base import Detector
+from costume_spotter.detection.base import PERSON_CLASSES, Detector, wanted_classes
 from costume_spotter.events.events import BoundingBox, Detection
 
-_PERSON_CLASS = 0  # COCO "person" — the only class we act on
 _NMS_IOU = 0.45  # overlap above which two person boxes are the same person
 _PAD_VALUE = 114  # Ultralytics' letterbox grey
 
@@ -72,13 +71,25 @@ def nms(boxes: np.ndarray, scores: np.ndarray, iou_threshold: float) -> list[int
 
 
 def decode(output: np.ndarray, *, scale: float, left: int, top: int,
-           frame_w: int, frame_h: int, threshold: float) -> list[Detection]:
-    """YOLOv8 raw output (1, 4 + classes, N) -> person Detections in frame pixels.
+           frame_w: int, frame_h: int, threshold: float,
+           classes: dict[int, str] = PERSON_CLASSES) -> list[Detection]:
+    """YOLOv8 raw output (1, 4 + classes, N) -> Detections in frame pixels.
 
-    Pure numpy so it is tested without a model file (tests/test_onnx_yolo.py).
+    ``classes`` maps the COCO ids to keep to their labels (people, plus dogs and
+    cats when pets are on). Duplicate suppression runs per class, so a kid
+    carrying a dog stays two detections. Pure numpy, so it is tested without a
+    model file (tests/test_onnx_yolo.py).
     """
-    preds = output[0]  # (4 + classes, N)
-    scores = preds[4 + _PERSON_CLASS]
+    detections: list[Detection] = []
+    for class_id, label in classes.items():
+        detections += _decode_class(output[0], class_id, label, scale=scale, left=left, top=top,
+                                    frame_w=frame_w, frame_h=frame_h, threshold=threshold)
+    return detections
+
+
+def _decode_class(preds: np.ndarray, class_id: int, label: str, *, scale: float, left: int,
+                  top: int, frame_w: int, frame_h: int, threshold: float) -> list[Detection]:
+    scores = preds[4 + class_id]
     mask = scores >= threshold  # 01-F5, at the source
     if not mask.any():
         return []
@@ -101,7 +112,7 @@ def decode(output: np.ndarray, *, scale: float, left: int, top: int,
         if width <= 0 or height <= 0:
             continue
         detections.append(Detection(box=BoundingBox(x, y, width, height),
-                                    confidence=round(float(scores[i]), 2)))
+                                    confidence=round(float(scores[i]), 2), label=label))
     return detections
 
 
@@ -111,7 +122,7 @@ class OnnxYoloDetector(Detector):
     name = "onnx-yolov8"
 
     def __init__(self, model_path: Path | str, confidence_threshold: float = 0.5,
-                 provider: str = "cpu") -> None:
+                 provider: str = "cpu", detect_pets: bool = False) -> None:
         try:
             import onnxruntime as ort
         except ImportError as exc:  # fail fast with the fix (01-F6)
@@ -134,6 +145,7 @@ class OnnxYoloDetector(Detector):
                 "onnxruntime-directml and uninstall plain onnxruntime (they conflict)"
             )
         self._threshold = confidence_threshold
+        self._classes = wanted_classes(detect_pets)
         self._session = ort.InferenceSession(str(model_path), providers=wanted)
         model_input = self._session.get_inputs()[0]
         self._input_name = model_input.name
@@ -146,4 +158,5 @@ class OnnxYoloDetector(Detector):
         tensor, scale, left, top = letterbox(frame, self._size)
         (output,) = self._session.run(None, {self._input_name: tensor})
         return decode(output, scale=scale, left=left, top=top,
-                      frame_w=frame_w, frame_h=frame_h, threshold=self._threshold)
+                      frame_w=frame_w, frame_h=frame_h, threshold=self._threshold,
+                      classes=self._classes)

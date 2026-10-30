@@ -28,6 +28,7 @@ class _TrackedVisitor:
     visitor_id: int
     box: BoundingBox
     last_seen: float
+    label: str = "person"  # person | dog | cat (01-F7)
     consecutive_hits: int = 1
     # Frames missed since the last hit. A detector blinks on capes, masks and
     # odd poses; a candidate survives up to max_misses blinks before its count
@@ -47,6 +48,7 @@ class NewVisitor:
     visitor_id: int
     box: BoundingBox
     snapshot: np.ndarray  # RGB crop; the pipeline JPEG-encodes it
+    visitor_type: str = "person"  # person | dog | cat
 
 
 @dataclass
@@ -70,8 +72,11 @@ class VisitorTracker:
         # Greedy matching: pair the highest-IoU (visitor, detection) combinations
         # first. With ≤ a few people in frame this is effectively optimal.
         unmatched = list(detections)
+        # Only same-kind pairs: a dog at a kid's feet overlaps the kid's box,
+        # and must never be mistaken for the kid (or vice versa).
         pairs = sorted(
-            ((v.box.iou(d.box), v, d) for v in self._visitors.values() for d in unmatched),
+            ((v.box.iou(d.box), v, d) for v in self._visitors.values() for d in unmatched
+             if v.label == d.label),
             key=lambda t: t[0],
             reverse=True,
         )
@@ -103,7 +108,7 @@ class VisitorTracker:
         # Anything left unmatched starts life as a 1-hit candidate. A YOLO
         # flicker on a shadow dies here quietly, min_hits frames short of an event.
         for det in unmatched:
-            v = _TrackedVisitor(self._next_id, det.box, now)
+            v = _TrackedVisitor(self._next_id, det.box, now, label=det.label)
             self._remember_best_crop(v, det.box, frame)
             self._visitors[self._next_id] = v
             self._next_id += 1
@@ -140,7 +145,7 @@ class VisitorTracker:
     def _announce(self, v: _TrackedVisitor) -> NewVisitor:
         v.announced = True
         assert v.best_crop is not None  # set on first sighting, by construction
-        out = NewVisitor(v.visitor_id, v.box, v.best_crop)
+        out = NewVisitor(v.visitor_id, v.box, v.best_crop, visitor_type=v.label)
         v.best_crop = None  # free the pixels; only the box is needed from here on
         return out
 

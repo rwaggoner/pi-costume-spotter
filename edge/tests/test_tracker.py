@@ -130,3 +130,14 @@ def test_snapshot_prefers_a_sharp_frame_over_a_slightly_bigger_blurry_one():  # 
     tracker.update([detection(100, 100, 100, 200)], crisp, now=0.0)
     [visitor] = tracker.update([detection(100, 100, 105, 210)], blurry, now=0.1)
     assert visitor.snapshot.std() > 30  # the detailed crop, not the flat grey one
+
+
+def test_a_dog_beside_a_kid_is_its_own_visitor():  # 01-F7
+    from costume_spotter.events.events import BoundingBox, Detection
+
+    tracker = make_tracker(min_hits=2)
+    kid = Detection(box=BoundingBox(100, 100, 80, 200), confidence=0.9)
+    dog = Detection(box=BoundingBox(110, 200, 70, 100), confidence=0.9, label="dog")  # overlaps
+    announced = tracker.update([kid, dog], F, now=0.0)
+    announced += tracker.update([kid, dog], F, now=0.1)
+    assert sorted(v.visitor_type for v in announced) == ["dog", "person"]

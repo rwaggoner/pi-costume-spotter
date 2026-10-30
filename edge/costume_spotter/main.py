@@ -63,11 +63,13 @@ def build_detector(settings: Settings) -> Detector:
         from costume_spotter.detection.hailo import HailoDetector
         if settings.hailo_hef_path is None:
             raise ValueError("DETECTOR=hailo requires HAILO_HEF_PATH (docs/setup-pi.md §3)")
-        return HailoDetector(settings.hailo_hef_path, settings.detection_confidence_threshold)
+        return HailoDetector(settings.hailo_hef_path, settings.detection_confidence_threshold,
+                             detect_pets=settings.detect_pets)
     if settings.detector == "onnx":
         from costume_spotter.detection.onnx_yolo import OnnxYoloDetector
         return OnnxYoloDetector(settings.onnx_model_path, settings.detection_confidence_threshold,
-                                provider=settings.onnx_provider)
+                                provider=settings.onnx_provider,
+                                detect_pets=settings.detect_pets)
     raise ValueError(f"unknown DETECTOR: {settings.detector!r}")
 
 

@@ -35,3 +35,12 @@ def test_normal_matrix_passes_through():
 def test_missing_person_class_yields_zero_rows():
     # Defensive: a model with an unexpected class layout must not crash us.
     assert person_rows([]).shape == (0, 5)
+
+
+def test_class_rows_reads_any_class_for_pets():  # 01-F7
+    from costume_spotter.detection.hailo import class_rows
+
+    results = [[], *([[]] * 14), np.array([0.1, 0.1, 0.4, 0.3, 0.8]), np.empty((0, 5))]
+    assert class_rows(results, 15).shape == (1, 5)  # cat
+    assert class_rows(results, 16).shape == (0, 5)  # dog: none
+    assert class_rows(results, 40).shape == (0, 5)  # beyond the model's classes

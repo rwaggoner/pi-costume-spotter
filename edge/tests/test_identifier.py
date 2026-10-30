@@ -16,6 +16,7 @@ from costume_spotter.events import (
     SpottedVisitor,
 )
 from costume_spotter.events.events import BoundingBox
+from costume_spotter.vision import prompts
 from costume_spotter.vision.identifier import (
     CostumeIdentifier,
     GroupReading,
@@ -24,10 +25,12 @@ from costume_spotter.vision.identifier import (
 from tests.conftest import drain, eventually
 
 
-def make_group(size: int = 1) -> GroupSpotted:
+def make_group(size: int = 1, kinds: tuple[str, ...] = ()) -> GroupSpotted:
+    kinds = kinds or ("person",) * size
     return GroupSpotted(group_id="g1", visitors=tuple(
-        SpottedVisitor(visitor_id=i, snapshot_jpeg=b"\xff\xd8fake", box=BoundingBox(10, 10, 40, 80))
-        for i in range(1, size + 1)))
+        SpottedVisitor(visitor_id=i, snapshot_jpeg=b"\xff\xd8fake",
+                       box=BoundingBox(10, 10, 40, 80), visitor_type=kind)
+        for i, kind in enumerate(kinds, start=1)))
 
 
 def make_identifier(bus: EventBus, api_key: str | None = None) -> CostumeIdentifier:
@@ -145,13 +148,14 @@ async def test_one_request_carries_every_photo_labeled_in_order():  # 03-F9
     identifier._client = Recorder()  # noqa: SLF001
     identified, greetings = await collect(bus)
     await bus.start()
-    bus.publish(make_group(2))
+    bus.publish(make_group(kinds=("person", "dog")))
     await eventually(lambda: len(greetings) == 1)
 
     assert len(calls) == 1
     blocks = calls[0]["messages"][0]["content"]
     assert [b["type"] for b in blocks] == ["text", "image", "text", "image", "text"]
-    assert blocks[0]["text"] == "Person 1:" and blocks[2]["text"] == "Person 2:"
+    assert blocks[0]["text"] == "Visitor 1 (person):" and blocks[2]["text"] == "Visitor 2 (dog):"
+    assert [e.visitor_type for e in identified] == ["person", "dog"]
     assert [e.costume for e in identified] == ["ghost", "cat"]
     assert greetings[0].text == "Hi all! Boo! Meow!"
     await bus.stop()
@@ -235,3 +239,21 @@ def test_parse_rejects_empty_greeting():
 def test_parse_rejects_non_json():
     with pytest.raises(ValueError):
         CostumeIdentifier._parse("I cannot see an image here.")
+
+
+async def test_pretend_mode_greets_pets_as_pets():  # 01-F7
+    bus = EventBus()
+    make_identifier(bus)
+    identified, greetings = await collect(bus)
+    await bus.start()
+    bus.publish(make_group(kinds=("dog",)))
+    await drain(bus)
+    assert identified[0].visitor_type == "dog"
+    assert identified[0].costume in {c for c, *_ in prompts.PRETEND_PETS}
+    await bus.stop()
+
+
+def test_prompt_tells_claude_about_pets():  # 03-F11
+    assert "Pets:" in prompts.SYSTEM_PROMPT
+    assert prompts.photo_label(2, "cat") == "Visitor 2 (cat):"
+    assert prompts.photo_label(1, "") == "Visitor 1:"

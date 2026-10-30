@@ -86,13 +86,15 @@ export interface NewVisitorSpottedEvent extends EventBase {
   visitor_id: number;
   box: BoundingBox;
   group_id: string;
+  /** person | dog | cat */
+  visitor_type: string;
 }
 
 /** People who arrived together; snapshots are stripped from the wire. */
 export interface GroupSpottedEvent extends EventBase {
   kind: "GroupSpotted";
   group_id: string;
-  visitors: { visitor_id: number; box: BoundingBox }[];
+  visitors: { visitor_id: number; box: BoundingBox; visitor_type: string }[];
 }
 
 /** The words spoken for a group: greeting, plus shout-outs for small groups. */
@@ -115,6 +117,7 @@ export interface CostumeIdentifiedEvent extends EventBase {
   detector: string;
   group_id: string;
   group_size: number;
+  visitor_type: string;
 }
 
 export interface SightingLoggedEvent extends EventBase {

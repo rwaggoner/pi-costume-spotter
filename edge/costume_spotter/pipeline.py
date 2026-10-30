@@ -115,16 +115,19 @@ class FramePipeline:
         members = []
         for visitor in group:
             snapshot_jpeg = await asyncio.to_thread(_encode_snapshot, visitor.snapshot)
-            logger.info("new visitor #%d (box %dx%d, group %s of %d)", visitor.visitor_id,
-                        visitor.box.width, visitor.box.height, group_id, len(group))
+            logger.info("new %s #%d (box %dx%d, group %s of %d)", visitor.visitor_type,
+                        visitor.visitor_id, visitor.box.width, visitor.box.height,
+                        group_id, len(group))
             self._bus.publish(NewVisitorSpotted(
                 visitor_id=visitor.visitor_id,
                 snapshot_jpeg=snapshot_jpeg,
                 box=visitor.box,
                 group_id=group_id,
+                visitor_type=visitor.visitor_type,
             ))
             members.append(SpottedVisitor(visitor_id=visitor.visitor_id,
-                                          snapshot_jpeg=snapshot_jpeg, box=visitor.box))
+                                          snapshot_jpeg=snapshot_jpeg, box=visitor.box,
+                                          visitor_type=visitor.visitor_type))
         self._bus.publish(GroupSpotted(group_id=group_id, visitors=tuple(members)))
 
 

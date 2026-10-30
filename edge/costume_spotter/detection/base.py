@@ -6,9 +6,19 @@ import numpy as np
 
 from costume_spotter.events.events import Detection
 
+# COCO class ids the porch cares about. Detection.label carries the name, so
+# nothing downstream ever sees a vendor class id (01-F4).
+PERSON_CLASSES: dict[int, str] = {0: "person"}
+PET_CLASSES: dict[int, str] = {15: "cat", 16: "dog"}
+
+
+def wanted_classes(detect_pets: bool) -> dict[int, str]:
+    """People always; dogs and cats when DETECT_PETS is on (01-F7)."""
+    return {**PERSON_CLASSES, **PET_CLASSES} if detect_pets else dict(PERSON_CLASSES)
+
 
 class Detector(ABC):
-    """Finds people in a single RGB frame.
+    """Finds people (and, where supported, pets) in a single RGB frame.
 
     Contract (enforced by tests/contracts/test_detector_contract.py):
     - stateless per call: same frame in, same detections out (tracking is NOT

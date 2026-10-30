@@ -1,4 +1,4 @@
-"""Hailo-8 person detection: YOLOv8s on the AI HAT+ (pi profile; ADR-001).
+"""Hailo-8 person (and pet) detection: YOLOv8s on the AI HAT+ (pi profile; ADR-001).
 
 Uses Picamera2's ``Hailo`` helper rather than raw HailoRT: it's the path
 Raspberry Pi documents and ships examples for, it manages the VDevice/stream
@@ -14,13 +14,18 @@ code simple.
 import numpy as np
 from PIL import Image
 
-from costume_spotter.detection.base import Detector
+from costume_spotter.detection.base import Detector, wanted_classes
 from costume_spotter.events.events import BoundingBox, Detection
 
-_PERSON_CLASS = 0  # COCO class index for "person" — the only class we act on
+_PERSON_CLASS = 0  # COCO class index for "person"
 
 
 def person_rows(results) -> np.ndarray:
+    """The person class's rows; see class_rows."""
+    return class_rows(results, _PERSON_CLASS)
+
+
+def class_rows(results, class_id: int) -> np.ndarray:
     """Normalize the Hailo helper's per-class results to an (N, 5) array.
 
     The helper's shape varies with content (issue #7, found on the very first
@@ -32,9 +37,9 @@ def person_rows(results) -> np.ndarray:
     Module-level (not a method) so it's unit-testable on machines without
     Hailo hardware — the class constructor needs the real device.
     """
-    if len(results) <= _PERSON_CLASS:
+    if len(results) <= class_id:
         return np.empty((0, 5), dtype=np.float32)
-    rows = np.asarray(results[_PERSON_CLASS], dtype=np.float32)
+    rows = np.asarray(results[class_id], dtype=np.float32)
     if rows.size == 0:
         return np.empty((0, 5), dtype=np.float32)
     return rows.reshape(-1, 5)
@@ -45,7 +50,8 @@ class HailoDetector(Detector):
 
     name = "hailo"
 
-    def __init__(self, hef_path, confidence_threshold: float = 0.5) -> None:
+    def __init__(self, hef_path, confidence_threshold: float = 0.5,
+                 detect_pets: bool = False) -> None:
         try:
             from picamera2.devices import Hailo
         except ImportError as exc:
@@ -54,6 +60,7 @@ class HailoDetector(Detector):
                 "--system-site-packages (docs/setup-pi.md §3/§6)"
             ) from exc
         self._threshold = confidence_threshold
+        self._classes = wanted_classes(detect_pets)
         self._hailo = Hailo(str(hef_path))  # fails loudly if the HAT is absent (01-F6)
         h, w = self._hailo.get_input_shape()[:2]
         self._model_h, self._model_w = int(h), int(w)
@@ -69,21 +76,23 @@ class HailoDetector(Detector):
         )
         # With NMS compiled into the HEF, run() returns per-class results of
         # [y0, x0, y1, x1, score] rows, coordinates normalized to 0..1 —
-        # in content-dependent shapes; person_rows() normalizes them.
+        # in content-dependent shapes; class_rows() normalizes them.
         results = self._hailo.run(small)
         detections: list[Detection] = []
-        for y0, x0, y1, x1, score in person_rows(results):
-            if score < self._threshold:  # 01-F5, at the source
-                continue
-            detections.append(Detection(
-                box=BoundingBox(
-                    x=int(x0 * frame_w),
-                    y=int(y0 * frame_h),
-                    width=int((x1 - x0) * frame_w),
-                    height=int((y1 - y0) * frame_h),
-                ),
-                confidence=round(float(score), 2),
-            ))
+        for class_id, label in self._classes.items():
+            for y0, x0, y1, x1, score in class_rows(results, class_id):
+                if score < self._threshold:  # 01-F5, at the source
+                    continue
+                detections.append(Detection(
+                    box=BoundingBox(
+                        x=int(x0 * frame_w),
+                        y=int(y0 * frame_h),
+                        width=int((x1 - x0) * frame_w),
+                        height=int((y1 - y0) * frame_h),
+                    ),
+                    confidence=round(float(score), 2),
+                    label=label,
+                ))
         return detections
 
     def close(self) -> None:

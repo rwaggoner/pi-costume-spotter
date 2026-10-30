@@ -58,6 +58,8 @@ class Settings(BaseSettings):
     # --- Detection (docs/requirements/01-detection.md) ---
     detector: str | None = None  # mock | hog | hailo | onnx; None = follow the profile
     detection_confidence_threshold: float = 0.5  # 01-F5
+    # 01-F7: also greet dogs and cats (onnx and hailo detectors; COCO classes).
+    detect_pets: bool = True
     hailo_hef_path: Path | None = None
     # ONNX YOLOv8 detector (windows profile; any machine with the [onnx] extra).
     onnx_model_path: Path = Path("./models/yolov8n.onnx")

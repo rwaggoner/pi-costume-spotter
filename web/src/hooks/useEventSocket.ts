@@ -29,7 +29,9 @@ const SILENT_KINDS = new Set(["FrameProcessed", "SystemStatus"]);
 function describe(event: WireEvent): string {
   switch (event.kind) {
     case "NewVisitorSpotted":
-      return `Visitor #${event.visitor_id} spotted`;
+      return event.visitor_type && event.visitor_type !== "person"
+        ? `${event.visitor_type[0].toUpperCase()}${event.visitor_type.slice(1)} #${event.visitor_id} spotted`
+        : `Visitor #${event.visitor_id} spotted`;
     case "GroupSpotted":
       return event.visitors.length === 1
         ? "Identifying the visitor…"

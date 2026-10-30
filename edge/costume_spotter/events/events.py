@@ -119,16 +119,18 @@ class NewVisitorSpotted(BaseEvent):
     visitor_id: int
     snapshot_jpeg: bytes
     box: BoundingBox
-    group_id: str = ""  # which GroupSpotted this person arrived in (02-F7)
+    group_id: str = ""  # which GroupSpotted this visitor arrived in (02-F7)
+    visitor_type: str = "person"  # person | dog | cat (01-F7)
 
 
 @dataclass(frozen=True)
 class SpottedVisitor:
-    """One member of a group: what identification needs about a person."""
+    """One member of a group: what identification needs about a visitor."""
 
     visitor_id: int
     snapshot_jpeg: bytes
     box: BoundingBox
+    visitor_type: str = "person"  # person | dog | cat (01-F7)
 
 
 @dataclass(frozen=True)
@@ -156,8 +158,9 @@ class CostumeIdentified(BaseEvent):
     snapshot_jpeg: bytes
     box: BoundingBox
     detector: str
-    group_id: str = ""   # links the people greeted together (02-F7)
+    group_id: str = ""   # links the visitors greeted together (02-F7)
     group_size: int = 1
+    visitor_type: str = "person"  # person | dog | cat (01-F7)
 
 
 @dataclass(frozen=True)

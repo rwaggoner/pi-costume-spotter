@@ -61,3 +61,19 @@ def test_decode_clamps_boxes_to_the_frame():
 def test_nms_keeps_the_best_of_overlapping_boxes():
     boxes = np.array([[0, 0, 10, 10], [1, 1, 11, 11], [50, 50, 60, 60]], dtype=np.float32)
     assert nms(boxes, np.array([0.5, 0.9, 0.4]), 0.45) == [1, 2]
+
+
+def test_decode_keeps_pets_with_their_labels_when_asked():  # 01-F7
+    out = raw_output((100, 100, 50, 100, 0.9), (300, 300, 80, 60, 0.0, 16, 0.85))  # person, dog
+    people_only = decode(out, scale=1.0, left=0, top=0, frame_w=640, frame_h=640, threshold=0.5)
+    assert [d.label for d in people_only] == ["person"]
+    with_pets = decode(out, scale=1.0, left=0, top=0, frame_w=640, frame_h=640, threshold=0.5,
+                       classes={0: "person", 15: "cat", 16: "dog"})
+    assert sorted(d.label for d in with_pets) == ["dog", "person"]
+
+
+def test_a_kid_holding_a_dog_stays_two_detections():  # NMS runs per class
+    out = raw_output((200, 200, 100, 200, 0.9), (205, 205, 95, 190, 0.0, 16, 0.8))
+    dets = decode(out, scale=1.0, left=0, top=0, frame_w=640, frame_h=640, threshold=0.5,
+                  classes={0: "person", 16: "dog"})
+    assert sorted(d.label for d in dets) == ["dog", "person"]

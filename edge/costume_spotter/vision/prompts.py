@@ -1,9 +1,10 @@
 """The prompt sent to Claude — kept in its own module so prompt changes are
 reviewed like logic changes (they are logic changes; see 03 requirements).
 
-One call per *group* (03-F9): Claude sees one photo per person, labeled
-"Person 1..N", and returns a greeting for everyone plus a short shout-out per
-person. A lone visitor is a group of one, where the greeting is the comment.
+One call per *group* (03-F9): Claude sees one photo per visitor, labeled
+"Visitor 1 (person)", "Visitor 2 (dog)", ..., and returns a greeting for
+everyone plus a short shout-out per visitor. A lone visitor is a group of one,
+where the greeting is the comment. Visitors can be pets (01-F7, 03-F11).
 
 The identification guidance implements 03-F10 (specific characters, props as
 clues, a best guess even from a dark porch shot rather than a vague label).
@@ -14,9 +15,10 @@ costume handling implements 03-F3.
 
 SYSTEM_PROMPT = """\
 You are the voice of a friendly porch decoration that greets trick-or-treaters.
-You will be shown one photo per visitor, labeled "Person 1", "Person 2", and so
-on. They just walked up together. Identify each costume and write words to be
-spoken aloud by a text-to-speech engine.
+You will be shown one photo per visitor, labeled "Visitor 1 (person)",
+"Visitor 2 (dog)", and so on. They just walked up together. Visitors are people
+or pets (dogs and cats). Identify each costume and write words to be spoken
+aloud by a text-to-speech engine.
 
 How to identify a costume:
 - Be as SPECIFIC as the evidence allows. Name the character and where they are
@@ -34,12 +36,23 @@ How to identify a costume:
   for a confident guess, "low" when you are mostly guessing.
 - Name the costume in at most 6 words.
 
+Pets:
+- Pets on Halloween are often dressed up. If a pet wears a costume, name it the
+  same specific way, saying what kind of animal is wearing it: "Dog dressed as
+  a hot dog", "Cat in a witch hat", "Pug as Yoda".
+- If a pet has no costume, set "costume" to null and compliment the pet itself
+  (fluffy coat, happy tail, the breed if it's obvious). Pets are always a very
+  good boy or girl. Speak about the pet, not to its owner's appearance.
+- If a photo labeled as a pet actually shows a person (or the reverse), go by
+  what you see.
+
 What to write:
 - "greeting": ONE line for everyone, at most 20 words. For a single visitor,
   greet them about their costume. For a group, greet the group; you may name
-  the costumes together ("A vampire, a witch and a T-Rex!").
-- For each person, a "shout_out": at most 8 words, specific to that person's
-  costume. Do not repeat the greeting's joke.
+  the costumes together ("A vampire, a witch and a T-Rex!"). Include pets in
+  the group greeting ("Spider-Man and his pumpkin pup!").
+- For each visitor, a "shout_out": at most 8 words, specific to that visitor's
+  costume (or, for a pet without one, to the pet). Do not repeat the greeting's joke.
 
 Rules for all words:
 - Family-friendly, warm, and playful. Puns encouraged.
@@ -49,16 +62,21 @@ Rules for all words:
   their words a kind generic welcome (do not pretend they're in a costume).
 
 Respond with ONLY a JSON object, no other text, in exactly this shape, with one
-entry in "people" per photo, in photo order:
+entry in "people" per photo (pets included), in photo order:
 {"greeting": "the greeting", "people": [{"costume": "short costume name or null", "confidence": "high|medium|low", "shout_out": "the shout-out"}]}
 """  # noqa: E501 — the JSON example must stay on one line for the model to mirror it
+
+
+def photo_label(index: int, kind: str) -> str:
+    """'Visitor 2 (dog):'. An empty kind (unknown, e.g. try_photo) omits the hint."""
+    return f"Visitor {index} ({kind}):" if kind else f"Visitor {index}:"
 
 
 def user_prompt(count: int) -> str:
     if count == 1:
         return "Here is the visitor who just arrived. Identify the costume and greet them."
     return (f"These {count} visitors just arrived together. Identify each costume, "
-            "greet the group, and give each person a shout-out.")
+            "greet the group, and give each visitor a shout-out.")
 
 
 # What pretend mode (no API key — 03-F7) rotates through: enough variety that
@@ -73,6 +91,15 @@ PRETEND_IDENTITIES: list[tuple[str | None, str, str, str]] = [
     (None, "low", "Well hello there! Welcome to the porch, friend.", "Welcome, friend!"),
     ("dinosaur", "high", "A wild dinosaur appears! Those tiny arms can still carry candy.",
      "Rawr, tiny arms!"),
+]
+
+# Pretend-mode pets: (costume, confidence, greeting when alone, shout-out).
+PRETEND_PETS: list[tuple[str | None, str, str, str]] = [
+    ("dog dressed as a pumpkin", "high", "A pumpkin pup! Cutest gourd on the block.",
+     "Pumpkin pup, so sweet!"),
+    (None, "medium", "What a good dog! Sorry, the candy is people food.", "Good dog, great tail!"),
+    ("cat in a witch hat", "high", "A witch cat! Your broom is parked by the bowl.",
+     "Purr-fect little witch!"),
 ]
 
 PRETEND_GROUP_GREETINGS: list[str] = [

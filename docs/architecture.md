@@ -116,7 +116,7 @@ Events are frozen dataclasses in [`edge/costume_spotter/events/events.py`](../ed
 |-------|--------------|-------------|--------------------|
 | `FrameProcessed` | pipeline | API (MJPEG/overlay) | annotated frame, boxes, fps |
 | `NewVisitorSpotted` | pipeline | API | visitor id, snapshot (JPEG bytes, dropped from the WS wire), box, group id |
-| `GroupSpotted` | pipeline (GroupAssembler) | identifier, API | group id, one snapshot + box per person |
+| `GroupSpotted` | pipeline (GroupAssembler) | identifier, API | group id, one snapshot + box + visitor type (person/dog/cat) per visitor |
 | `CostumeIdentified` | identifier | storage, API, cloudsync | per person: costume label, confidence, comment (their shout-out, or the greeting when alone), group id/size |
 | `GreetingReady` | identifier | speech, API | group id, the text to speak, sighting ids covered |
 | `SightingLogged` | storage | API | sighting DB id, snapshot path |

@@ -5,7 +5,8 @@
     python -m costume_spotter.vision.try_photo --group kid1.jpg kid2.jpg kid3.jpg
     python -m costume_spotter.vision.try_photo --model claude-haiku-5-5 witch.jpg
 
-Each photo is treated as ONE person (crop it to the person for best results).
+Each photo is treated as ONE visitor, a person or a pet (crop it to them for
+best results).
 By default each photo gets its own Claude call; ``--group`` sends them together
 the way the porch does when friends arrive at once. Photos get the same
 preparation as live snapshots (resize, contrast and low-light correction), so
@@ -56,7 +57,9 @@ async def _run(paths: list[Path], group: bool, model: str, settings: Settings) -
     batches = [paths] if group else [[p] for p in paths]
     for batch in batches:
         started = time.monotonic()
-        reading = await identifier._identify_with_claude([_load(p) for p in batch])  # noqa: SLF001
+        # kind "" = let Claude decide person vs pet (the porch gets it from YOLO).
+        reading = await identifier._identify_with_claude(  # noqa: SLF001
+            [(_load(p), "") for p in batch])
         elapsed = time.monotonic() - started
         print(f"\n{model}  ({elapsed:.1f} s)")
         for path, person in zip(batch, reading.people, strict=True):

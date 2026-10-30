@@ -28,7 +28,8 @@ async def test_group_mode_sends_every_photo_in_one_call(tmp_path, monkeypatch, c
                          group=True, model="m", settings=settings)
 
     assert len(calls) == 1 and len(calls[0]) == 2
-    assert all(jpeg[:2] == b"\xff\xd8" for jpeg in calls[0])  # prepared like live snapshots
+    assert all(jpeg[:2] == b"\xff\xd8" for jpeg, _ in calls[0])  # prepared like live snapshots
+    assert all(kind == "" for _, kind in calls[0])  # person vs pet left to Claude
     out = capsys.readouterr().out
     assert "a.jpg: Witch  [high]" in out and 'would say: "Spooky squad! Nice hat! Beep!"' in out
 

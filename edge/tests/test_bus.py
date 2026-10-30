@@ -88,3 +88,20 @@ async def test_subscribe_after_start_is_rejected():
     with pytest.raises(RuntimeError):
         bus.subscribe(collector([]), name="late")
     await bus.stop()
+
+
+def test_no_event_field_shadows_the_wire_kind():
+    """The dashboard dispatches on wire "kind" (the event's type name). A dataclass
+    field named "kind" would silently overwrite it, e.g. a dog's NewVisitorSpotted
+    arriving as kind "dog" (caught while adding pets)."""
+    import dataclasses
+
+    from costume_spotter.events import events as ev
+    from costume_spotter.events.events import BoundingBox
+
+    for cls in vars(ev).values():
+        if isinstance(cls, type) and issubclass(cls, ev.BaseEvent):
+            assert "kind" not in {f.name for f in dataclasses.fields(cls)}, cls.__name__
+    wire = ev.NewVisitorSpotted(visitor_id=1, snapshot_jpeg=b"x", box=BoundingBox(0, 0, 1, 1),
+                                visitor_type="dog").as_wire_dict()
+    assert wire["kind"] == "NewVisitorSpotted" and wire["visitor_type"] == "dog"

@@ -17,6 +17,7 @@ left for the API server and TTS.
 | 01-F4 | Expose detections as plain data (`Detection(box, confidence, class)`) — downstream code must never import Hailo/IMX500 SDKs. |
 | 01-F5 | Detections below a configurable confidence threshold (default 0.5) are discarded at the source. |
 | 01-F6 | Detector failures (driver missing, model file absent) must fail fast at startup with an actionable error message, not degrade silently. |
+| 01-F7 | **Pets:** with `DETECT_PETS=true` (default), the ONNX and Hailo detectors also report dogs and cats (COCO classes 16 and 15), labeled on each `Detection`. Duplicate suppression runs per class, so a kid holding a dog stays two detections. The tracker only matches boxes of the same kind, so a pet at a kid's feet is its own visitor and joins the kid's group. |
 
 ## Non-functional requirements
 

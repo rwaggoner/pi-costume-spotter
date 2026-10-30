@@ -65,6 +65,7 @@ class CostumeIdentifier:
         # get the greeting only, so the porch isn't talking for half a minute.
         self._shout_out_max_group = shout_out_max_group
         self._pretend = cycle(prompts.PRETEND_IDENTITIES)
+        self._pretend_pets = cycle(prompts.PRETEND_PETS)
         self._pretend_group = cycle(prompts.PRETEND_GROUP_GREETINGS)
 
         if api_key:
@@ -101,11 +102,12 @@ class CostumeIdentifier:
         assert isinstance(event, GroupSpotted)
         count = len(event.visitors)
         if self._client is None:
-            reading, source = self._pretend_reading(count), "pretend"
+            reading = self._pretend_reading([v.visitor_type for v in event.visitors])
+            source = "pretend"
         else:
             try:
                 reading = await self._identify_with_claude(
-                    [v.snapshot_jpeg for v in event.visitors])
+                    [(v.snapshot_jpeg, v.visitor_type) for v in event.visitors])
                 source = "claude"
                 self._bus.publish(SystemStatus(component="identifier", ok=True))
             except Exception as exc:
@@ -134,6 +136,7 @@ class CostumeIdentifier:
                 detector=self._detector_name,
                 group_id=event.group_id,
                 group_size=count,
+                visitor_type=visitor.visitor_type,
             ))
         self._bus.publish(GreetingReady(group_id=event.group_id,
                                         text=self.spoken_text(reading),
@@ -149,8 +152,10 @@ class CostumeIdentifier:
 
     # -- the three sources of words ---------------------------------------------
 
-    def _pretend_reading(self, count: int) -> GroupReading:
-        picks = [next(self._pretend) for _ in range(count)]
+    def _pretend_reading(self, kinds: list[str]) -> GroupReading:
+        count = len(kinds)
+        picks = [next(self._pretend) if kind == "person" else next(self._pretend_pets)
+                 for kind in kinds]
         people = tuple(PersonReading(costume, confidence, shout_out)
                        for costume, confidence, _, shout_out in picks)
         greeting = picks[0][2] if count == 1 else next(self._pretend_group)
@@ -163,12 +168,15 @@ class CostumeIdentifier:
         return GroupReading(greeting,
                             tuple(PersonReading(costume, confidence, "") for _ in range(count)))
 
-    async def _identify_with_claude(self, snapshots: list[bytes]) -> GroupReading:
-        """One vision call for the whole group — 03-F2/F9."""
+    async def _identify_with_claude(self, snapshots: list[tuple[bytes, str]]) -> GroupReading:
+        """One vision call for the whole group — 03-F2/F9.
+
+        ``snapshots`` is (JPEG, kind) per visitor; kind is the detector's
+        person/dog/cat, or "" when unknown (try_photo).
+        """
         content: list[dict] = []
-        for index, jpeg in enumerate(snapshots, start=1):
-            if len(snapshots) > 1:
-                content.append({"type": "text", "text": f"Person {index}:"})
+        for index, (jpeg, kind) in enumerate(snapshots, start=1):
+            content.append({"type": "text", "text": prompts.photo_label(index, kind)})
             content.append({
                 "type": "image",
                 "source": {
