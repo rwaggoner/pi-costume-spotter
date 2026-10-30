@@ -13,8 +13,11 @@ from costume_spotter.events.events import (
     CostumeIdentified,
     Detection,
     FrameProcessed,
+    GreetingReady,
+    GroupSpotted,
     NewVisitorSpotted,
     SightingLogged,
+    SpottedVisitor,
     SystemStatus,
 )
 
@@ -26,7 +29,10 @@ __all__ = [
     "Detection",
     "EventBus",
     "FrameProcessed",
+    "GreetingReady",
+    "GroupSpotted",
     "NewVisitorSpotted",
     "SightingLogged",
+    "SpottedVisitor",
     "SystemStatus",
 ]

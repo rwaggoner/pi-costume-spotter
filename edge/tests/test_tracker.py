@@ -31,13 +31,34 @@ def test_single_frame_flicker_is_ignored():  # 02-F3: a shadow YOLO fires on onc
     assert announced == []
 
 
-def test_consecutive_means_consecutive():  # 02-F3: hit, miss, hit, hit ≠ 3 consecutive
+def test_a_detector_blink_does_not_restart_the_count():  # 02-F3: tolerance
+    """hit, miss, hit, hit: one blink (capes and masks make YOLO blink) is
+    tolerated, so the person is announced on their 3rd hit, not delayed."""
     tracker = make_tracker(min_hits=3)
     announced = []
     script = [[detection(100, 100)], [], [detection(100, 100)], [detection(100, 100)]]
     for i, dets in enumerate(script):
         announced += tracker.update(dets, F, now=i * 0.1)
-    assert announced == []  # the miss reset the count; only 2 consecutive since
+    assert len(announced) == 1
+
+
+def test_too_many_misses_restart_the_count():  # 02-F3: hit, 3 misses, hit, hit
+    tracker = VisitorTracker(iou_threshold=0.3, min_hits=3, max_misses=2, retire_seconds=30.0)
+    announced = []
+    script = [[detection(100, 100)], [], [], [], [detection(100, 100)], [detection(100, 100)]]
+    for i, dets in enumerate(script):
+        announced += tracker.update(dets, F, now=i * 0.1)
+    assert announced == []  # 3 misses > max_misses: only 2 hits since the restart
+
+
+def test_pending_count_sees_people_about_to_be_announced():  # feeds grouping (02-F7)
+    tracker = make_tracker(min_hits=3)
+    tracker.update([detection(100, 100)], F, now=0.0)
+    assert tracker.pending_count() == 0  # one sighting could be a shadow
+    tracker.update([detection(100, 100)], F, now=0.1)
+    assert tracker.pending_count() == 1
+    tracker.update([detection(100, 100)], F, now=0.2)  # announced now
+    assert tracker.pending_count() == 0
 
 
 def test_moving_person_keeps_their_identity():  # 02-F1: IoU matching across drift

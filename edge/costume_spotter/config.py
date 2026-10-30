@@ -69,9 +69,14 @@ class Settings(BaseSettings):
     identify_timeout_seconds: float = 15.0  # 03-F6
 
     # --- Tracking (docs/requirements/02-tracking.md) ---
-    tracker_min_hits: int = 5  # 02-F3: consecutive frames before "new visitor"
+    tracker_min_hits: int = 3  # 02-F3: frames a person must be seen before "new visitor"
+    tracker_max_misses: int = 2  # 02-F3: missed frames tolerated while counting those hits
     tracker_retire_seconds: float = 30.0  # 02-F4: absence before a visitor is forgotten
     tracker_iou_threshold: float = 0.3  # 02-F1: minimum overlap to match across frames
+    # --- Groups (02-F7, 03-F9, 04-F9) ---
+    group_wait_seconds: float = 1.0  # longest a group waits for friends a step behind
+    group_max_size: int = 6  # people per Claude call; bigger crowds become several groups
+    shout_out_max_group: int = 3  # speak per-costume shout-outs for groups up to this size
 
     # --- Speech (docs/requirements/04-speech.md) ---
     tts_engine: str = "null"  # piper | google | null

@@ -81,7 +81,9 @@ def _jsonify(value):
     if isinstance(value, datetime):
         return value.isoformat()
     if dataclasses.is_dataclass(value) and not isinstance(value, type):
-        return {f.name: _jsonify(getattr(value, f.name)) for f in dataclasses.fields(value)}
+        # Nested values drop raw bytes too (GroupSpotted carries snapshots per person).
+        return {f.name: _jsonify(getattr(value, f.name)) for f in dataclasses.fields(value)
+                if not isinstance(getattr(value, f.name), bytes)}
     if isinstance(value, (list, tuple)):
         return [_jsonify(v) for v in value]
     return value
@@ -117,6 +119,28 @@ class NewVisitorSpotted(BaseEvent):
     visitor_id: int
     snapshot_jpeg: bytes
     box: BoundingBox
+    group_id: str = ""  # which GroupSpotted this person arrived in (02-F7)
+
+
+@dataclass(frozen=True)
+class SpottedVisitor:
+    """One member of a group: what identification needs about a person."""
+
+    visitor_id: int
+    snapshot_jpeg: bytes
+    box: BoundingBox
+
+
+@dataclass(frozen=True)
+class GroupSpotted(BaseEvent):
+    """People who arrived together, to be identified and greeted together (02-F7).
+
+    Published right after each member's NewVisitorSpotted. A lone visitor is a
+    group of one. The identifier makes ONE Claude call per group (03-F9).
+    """
+
+    group_id: str
+    visitors: tuple[SpottedVisitor, ...]
 
 
 @dataclass(frozen=True)
@@ -132,6 +156,19 @@ class CostumeIdentified(BaseEvent):
     snapshot_jpeg: bytes
     box: BoundingBox
     detector: str
+    group_id: str = ""   # links the people greeted together (02-F7)
+    group_size: int = 1
+
+
+@dataclass(frozen=True)
+class GreetingReady(BaseEvent):
+    """The words to speak for one group: a greeting, plus short per-costume
+    shout-outs for small groups (04-F9). Speech consumes this, not
+    CostumeIdentified, so a group is one utterance instead of N."""
+
+    group_id: str
+    text: str
+    sighting_ids: tuple[str, ...]  # every sighting this greeting covers
 
 
 @dataclass(frozen=True)

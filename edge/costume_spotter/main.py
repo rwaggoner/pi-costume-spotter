@@ -26,7 +26,7 @@ from costume_spotter.speech import SpeechService
 from costume_spotter.speech.base import AudioPlayer, TtsEngine
 from costume_spotter.storage import SightingRepository, SnapshotStore
 from costume_spotter.storage.logger import SightingLogger
-from costume_spotter.tracking import VisitorTracker
+from costume_spotter.tracking import GroupAssembler, VisitorTracker
 from costume_spotter.vision import CostumeIdentifier
 
 logger = logging.getLogger(__name__)
@@ -115,17 +115,22 @@ def build_application(settings: Settings) -> FastAPI:
     tracker = VisitorTracker(
         iou_threshold=settings.tracker_iou_threshold,
         min_hits=settings.tracker_min_hits,
+        max_misses=settings.tracker_max_misses,
         retire_seconds=settings.tracker_retire_seconds,
     )
+    grouper = GroupAssembler(wait_seconds=settings.group_wait_seconds,
+                             max_size=settings.group_max_size)
     pipeline = FramePipeline(bus, source, detector, tracker,
                              target_fps=settings.target_fps,
-                             confidence_threshold=settings.detection_confidence_threshold)
+                             confidence_threshold=settings.detection_confidence_threshold,
+                             grouper=grouper)
 
     # Reaction: identification + speech (both are pure bus subscribers)
     identifier = CostumeIdentifier(bus, api_key=settings.anthropic_api_key,
                                    model=settings.claude_model,
                                    timeout_seconds=settings.identify_timeout_seconds,
-                                   detector_name=detector.name)
+                                   detector_name=detector.name,
+                                   shout_out_max_group=settings.shout_out_max_group)
     tts_engine = build_tts_engine(settings)
     audio_filter = None
     if settings.spooky_voice:

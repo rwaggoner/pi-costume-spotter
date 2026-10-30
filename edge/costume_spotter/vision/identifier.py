@@ -1,10 +1,15 @@
-"""The costume identifier subscriber: NewVisitorSpotted → Claude → CostumeIdentified.
+"""The costume identifier subscriber: GroupSpotted → Claude → CostumeIdentified + GreetingReady.
+
+One Claude call per group of visitors who arrived together (03-F9): a lone
+visitor is a group of one. The answer is split into one CostumeIdentified per
+person (each logged as its own sighting) and one GreetingReady with the words
+to speak (04-F9): the group greeting, plus short per-costume shout-outs when
+the group is small enough for them to stay snappy.
 
 Failure philosophy (03-F6): this component sits between an unreliable network and
-a porch full of kids. Every path out of ``on_new_visitor`` publishes a
-CostumeIdentified event — a perfect one from Claude, a canned one in pretend
-mode, or the fallback identity when the API is down. Downstream components
-(storage, speech, dashboard) never need to know which.
+a porch full of kids. Every path out of ``on_group`` publishes — perfect words
+from Claude, canned ones in pretend mode, or the fallback identity when the API
+is down. Downstream components (storage, speech, dashboard) never need to know which.
 """
 
 import asyncio
@@ -13,28 +18,54 @@ import json
 import logging
 import re
 import uuid
+from dataclasses import dataclass
 from itertools import cycle
 
-from costume_spotter.events import CostumeIdentified, EventBus, NewVisitorSpotted, SystemStatus
+from costume_spotter.events import (
+    CostumeIdentified,
+    EventBus,
+    GreetingReady,
+    GroupSpotted,
+    SystemStatus,
+)
 from costume_spotter.events.events import BaseEvent
 from costume_spotter.vision import prompts
 
 logger = logging.getLogger(__name__)
 
-_MAX_RETRIES = 2  # 03-F8: transient failures get 2 retries with exponential backoff
+_MAX_RETRIES = 2  # 03-F8: transient failures get 2 retries...
+_BACKOFF_SECONDS = (0.5, 1.0)  # ...quickly: the visitor is standing right there
 _VALID_CONFIDENCE = {"high", "medium", "low"}
+
+
+@dataclass(frozen=True)
+class PersonReading:
+    costume: str | None  # None = regular clothes (03-F3)
+    confidence: str
+    shout_out: str
+
+
+@dataclass(frozen=True)
+class GroupReading:
+    greeting: str
+    people: tuple[PersonReading, ...]  # one per visitor, in group order
 
 
 class CostumeIdentifier:
     """Identifies costumes via the Claude Vision API — or pretends to (03-F7)."""
 
     def __init__(self, bus: EventBus, *, api_key: str | None, model: str,
-                 timeout_seconds: float, detector_name: str) -> None:
+                 timeout_seconds: float, detector_name: str,
+                 shout_out_max_group: int = 3) -> None:
         self._bus = bus
         self._model = model
         self._timeout = timeout_seconds
         self._detector_name = detector_name
+        # 04-F9: shout-outs are spoken for groups up to this size; bigger groups
+        # get the greeting only, so the porch isn't talking for half a minute.
+        self._shout_out_max_group = shout_out_max_group
         self._pretend = cycle(prompts.PRETEND_IDENTITIES)
+        self._pretend_group = cycle(prompts.PRETEND_GROUP_GREETINGS)
 
         if api_key:
             # Fail fast on an unusable key (same philosophy as 01-F6). Keys ride
@@ -64,65 +95,106 @@ class CostumeIdentifier:
 
         # Small queue on purpose: if identification falls behind a crowd, greeting
         # the freshest arrivals beats working through people who already left.
-        bus.subscribe(self.on_new_visitor, to=(NewVisitorSpotted,),
-                      name="vision.identifier", queue_size=8)
+        bus.subscribe(self.on_group, to=(GroupSpotted,), name="vision.identifier", queue_size=8)
 
-    async def on_new_visitor(self, event: BaseEvent) -> None:
-        assert isinstance(event, NewVisitorSpotted)
+    async def on_group(self, event: BaseEvent) -> None:
+        assert isinstance(event, GroupSpotted)
+        count = len(event.visitors)
         if self._client is None:
-            costume, confidence, comment, source = *next(self._pretend), "pretend"
+            reading, source = self._pretend_reading(count), "pretend"
         else:
             try:
-                costume, confidence, comment = await self._identify_with_claude(event.snapshot_jpeg)
+                reading = await self._identify_with_claude(
+                    [v.snapshot_jpeg for v in event.visitors])
                 source = "claude"
                 self._bus.publish(SystemStatus(component="identifier", ok=True))
             except Exception as exc:
                 # Whatever went wrong (network, 5xx after retries, bad JSON), the
                 # pipeline continues with the fallback identity (03-F6).
                 logger.warning("identification failed (%s); using fallback identity", exc)
-                costume, confidence, comment = prompts.FALLBACK_IDENTITY
-                source = "fallback"
+                reading, source = self._fallback_reading(count), "fallback"
                 self._bus.publish(SystemStatus(component="identifier", ok=False, detail=str(exc)))
 
-        self._bus.publish(CostumeIdentified(
-            sighting_id=str(uuid.uuid4()),
-            visitor_id=event.visitor_id,
-            costume=costume,
-            confidence=confidence,
-            comment=comment,
-            source=source,
-            snapshot_jpeg=event.snapshot_jpeg,
-            box=event.box,
-            detector=self._detector_name,
-        ))
+        sighting_ids = []
+        for visitor, person in zip(event.visitors, reading.people, strict=True):
+            sighting_id = str(uuid.uuid4())
+            sighting_ids.append(sighting_id)
+            self._bus.publish(CostumeIdentified(
+                sighting_id=sighting_id,
+                visitor_id=visitor.visitor_id,
+                costume=person.costume,
+                confidence=person.confidence,
+                # A lone visitor's words ARE the greeting; in a group, each
+                # sighting keeps its own shout-out (falling back to the greeting).
+                comment=(reading.greeting if count == 1
+                         else person.shout_out or reading.greeting),
+                source=source,
+                snapshot_jpeg=visitor.snapshot_jpeg,
+                box=visitor.box,
+                detector=self._detector_name,
+                group_id=event.group_id,
+                group_size=count,
+            ))
+        self._bus.publish(GreetingReady(group_id=event.group_id,
+                                        text=self.spoken_text(reading),
+                                        sighting_ids=tuple(sighting_ids)))
 
-    async def _identify_with_claude(self, snapshot_jpeg: bytes) -> tuple[str | None, str, str]:
-        """One vision call returning (costume, confidence, comment) — 03-F2."""
-        image_block = {
-            "type": "image",
-            "source": {
-                "type": "base64",
-                "media_type": "image/jpeg",
-                "data": base64.standard_b64encode(snapshot_jpeg).decode("ascii"),
-            },
-        }
+    def spoken_text(self, reading: GroupReading) -> str:
+        """What the speaker says (04-F9): the greeting, then shout-outs for small groups."""
+        count = len(reading.people)
+        if count == 1 or count > self._shout_out_max_group:
+            return reading.greeting
+        shout_outs = [p.shout_out for p in reading.people if p.shout_out]
+        return " ".join([reading.greeting, *shout_outs])
+
+    # -- the three sources of words ---------------------------------------------
+
+    def _pretend_reading(self, count: int) -> GroupReading:
+        picks = [next(self._pretend) for _ in range(count)]
+        people = tuple(PersonReading(costume, confidence, shout_out)
+                       for costume, confidence, _, shout_out in picks)
+        greeting = picks[0][2] if count == 1 else next(self._pretend_group)
+        return GroupReading(greeting, people)
+
+    @staticmethod
+    def _fallback_reading(count: int) -> GroupReading:
+        costume, confidence = prompts.FALLBACK_COSTUME
+        greeting = prompts.FALLBACK_GREETING if count == 1 else prompts.FALLBACK_GROUP_GREETING
+        return GroupReading(greeting,
+                            tuple(PersonReading(costume, confidence, "") for _ in range(count)))
+
+    async def _identify_with_claude(self, snapshots: list[bytes]) -> GroupReading:
+        """One vision call for the whole group — 03-F2/F9."""
+        content: list[dict] = []
+        for index, jpeg in enumerate(snapshots, start=1):
+            if len(snapshots) > 1:
+                content.append({"type": "text", "text": f"Person {index}:"})
+            content.append({
+                "type": "image",
+                "source": {
+                    "type": "base64",
+                    "media_type": "image/jpeg",
+                    "data": base64.standard_b64encode(jpeg).decode("ascii"),
+                },
+            })
+        content.append({"type": "text", "text": prompts.user_prompt(len(snapshots))})
+
         last_error: Exception | None = None
         for attempt in range(_MAX_RETRIES + 1):
             if attempt:
-                await asyncio.sleep(2 ** attempt)  # 2s, 4s — visitor is still walking up
+                await asyncio.sleep(_BACKOFF_SECONDS[attempt - 1])
             try:
                 response = await asyncio.wait_for(
                     self._client.messages.create(
                         model=self._model,
-                        max_tokens=200,
+                        # Greeting ~40 tokens + ~35 per person, with headroom.
+                        max_tokens=120 + 60 * len(snapshots),
                         system=prompts.SYSTEM_PROMPT,
-                        messages=[{"role": "user",
-                                   "content": [image_block,
-                                               {"type": "text", "text": prompts.USER_PROMPT}]}],
+                        messages=[{"role": "user", "content": content}],
                     ),
                     timeout=self._timeout,
                 )
-                return self._parse(response.content[0].text)
+                return self._parse(response.content[0].text, len(snapshots))
             except UnicodeEncodeError:
                 # Encoding failures happen before any network I/O and can never
                 # succeed on retry (defense in depth behind the __init__ key
@@ -134,23 +206,46 @@ class CostumeIdentifier:
         raise last_error  # type: ignore[misc]  # loop ran at least once
 
     @staticmethod
-    def _parse(text: str) -> tuple[str | None, str, str]:
+    def _parse(text: str, count: int = 1) -> GroupReading:
         """Parse the model's JSON, tolerating stray prose around it.
 
         The prompt demands bare JSON, but LLM outputs deserve seatbelts: we grab
-        the first {...} block and validate every field before trusting it.
+        the first {...} block and validate every field before trusting it. A
+        short or long ``people`` list is padded/trimmed to ``count`` so every
+        visitor still gets a sighting. The pre-group shape
+        ``{"costume", "confidence", "comment"}`` is accepted too.
         """
         match = re.search(r"\{.*\}", text, re.DOTALL)
         if not match:
             raise ValueError(f"no JSON object in model output: {text[:120]!r}")
         data = json.loads(match.group(0))
-        costume = data.get("costume")
-        if costume is not None:
-            costume = str(costume).strip()[:120] or None
-        confidence = str(data.get("confidence", "")).lower()
-        if confidence not in _VALID_CONFIDENCE:
-            confidence = "low"
-        comment = str(data.get("comment", "")).strip()
-        if not comment:
-            raise ValueError("model returned an empty comment")
-        return costume, confidence, comment
+
+        if "people" not in data and "comment" in data:  # single-visitor legacy shape
+            data = {"greeting": data.get("comment"),
+                    "people": [{"costume": data.get("costume"),
+                                "confidence": data.get("confidence"), "shout_out": ""}]}
+
+        raw_people = data.get("people")
+        if not isinstance(raw_people, list):
+            raw_people = []
+        people = [_person(p) for p in raw_people[:count] if isinstance(p, dict)]
+        costume, confidence = prompts.FALLBACK_COSTUME
+        while len(people) < count:
+            people.append(PersonReading(costume, confidence, ""))
+
+        greeting = str(data.get("greeting") or "").strip()
+        if not greeting and count == 1:
+            greeting = people[0].shout_out
+        if not greeting:
+            raise ValueError("model returned an empty greeting")
+        return GroupReading(greeting, tuple(people))
+
+
+def _person(raw: dict) -> PersonReading:
+    costume = raw.get("costume")
+    if costume is not None:
+        costume = str(costume).strip()[:120] or None
+    confidence = str(raw.get("confidence", "")).lower()
+    if confidence not in _VALID_CONFIDENCE:
+        confidence = "low"
+    return PersonReading(costume, confidence, str(raw.get("shout_out") or "").strip())

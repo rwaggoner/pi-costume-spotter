@@ -3,20 +3,16 @@
 import wave
 from io import BytesIO
 
-from costume_spotter.events import CommentSpoken, CostumeIdentified
-from costume_spotter.events.events import BoundingBox
+from costume_spotter.events import CommentSpoken, GreetingReady
 from costume_spotter.speech import SpeechService
 from costume_spotter.speech.base import AudioPlayer, TtsEngine
 from costume_spotter.speech.null import NullTtsEngine
 from tests.conftest import drain
 
 
-def identified(sighting_id: str, comment: str = "Nice costume!") -> CostumeIdentified:
-    return CostumeIdentified(
-        sighting_id=sighting_id, visitor_id=1, costume="witch", confidence="high",
-        comment=comment, source="pretend", snapshot_jpeg=b"x",
-        box=BoundingBox(0, 0, 10, 10), detector="mock",
-    )
+def identified(sighting_id: str, comment: str = "Nice costume!") -> GreetingReady:
+    """A lone visitor's greeting: one sighting."""
+    return GreetingReady(group_id=f"g-{sighting_id}", text=comment, sighting_ids=(sighting_id,))
 
 
 class RecordingPlayer(AudioPlayer):
@@ -86,6 +82,26 @@ async def test_engine_failure_is_reported_not_fatal(bus):  # 04-F5
 
     assert player.played == []
     assert spoken_events[0].spoken is False  # reported honestly, pipeline alive
+
+
+async def test_a_group_is_one_utterance_and_every_sighting_is_marked(bus):  # 04-F9
+    player = RecordingPlayer()
+    SpeechService(bus, NullTtsEngine(), player)
+    spoken: list = []
+
+    async def handler(event):
+        spoken.append(event)
+
+    bus.subscribe(handler, to=(CommentSpoken,), name="test.collector")
+    await bus.start()
+    bus.publish(GreetingReady(group_id="g", text="Hi crew! Boo! Meow!",
+                              sighting_ids=("a", "b", "c")))
+    await drain(bus)
+
+    assert len(player.played) == 1  # one clip for the whole group
+    assert [e.sighting_id for e in spoken] == ["a", "b", "c"]
+    assert all(e.spoken and e.text == "Hi crew! Boo! Meow!" for e in spoken)
+    await bus.stop()
 
 
 def test_null_engine_produces_valid_wav_scaled_to_text():

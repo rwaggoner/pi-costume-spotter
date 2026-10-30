@@ -55,7 +55,7 @@ def test_piper_uses_files_not_pipes(monkeypatch, voice):
 
     monkeypatch.setattr(piper_module, "piper_command", lambda: ["piper"])
     monkeypatch.setattr(piper_module.subprocess, "run", fake_run)
-    engine = piper_module.PiperTtsEngine(str(voice))
+    engine = piper_module.PiperTtsEngine(str(voice), in_process=False)
     wav = engine.synthesize("A wild T-Rex appears —\n tiny arms, big candy!")
     assert wav == b"RIFF fake wav"
     assert seen["text"] == "A wild T-Rex appears — tiny arms, big candy!"  # one line, UTF-8 intact
@@ -67,7 +67,7 @@ def test_piper_reports_failures(monkeypatch, voice):
     monkeypatch.setattr(piper_module.subprocess, "run",
                         lambda cmd, **kw: subprocess.CompletedProcess(cmd, 1, b"", b"boom"))
     with pytest.raises(RuntimeError, match="boom"):
-        piper_module.PiperTtsEngine(str(voice)).synthesize("hi")
+        piper_module.PiperTtsEngine(str(voice), in_process=False).synthesize("hi")
 
 
 def test_piper_fails_fast_on_missing_voice(monkeypatch, tmp_path):
@@ -81,3 +81,36 @@ def test_piper_prefers_our_interpreter_over_path(monkeypatch):
     the `piper` script isn't on PATH — `python -m piper` still works."""
     monkeypatch.setattr(piper_module.importlib.util, "find_spec", lambda name: object())
     assert piper_module.piper_command() == [sys.executable, "-m", "piper"]
+
+
+def test_piper_keeps_the_voice_loaded(monkeypatch, voice):
+    """The voice loads ONCE (plus a warm-up) and every comment reuses it — no
+    per-comment model load, which used to cost ~2 s per greeting."""
+    import types
+    import wave
+
+    loads: list = []
+    spoken: list = []
+
+    class FakeVoice:
+        @staticmethod
+        def load(path):
+            loads.append(path)
+            return FakeVoice()
+
+        def synthesize_wav(self, text, wav_file):
+            spoken.append(text)
+            wav_file.setnchannels(1)
+            wav_file.setsampwidth(2)
+            wav_file.setframerate(16000)
+            wav_file.writeframes(b"\x00\x00" * 160)
+
+    monkeypatch.setitem(sys.modules, "piper", types.SimpleNamespace(PiperVoice=FakeVoice))
+    engine = piper_module.PiperTtsEngine(str(voice), in_process=True)
+    first = engine.synthesize("Boo!\n Happy  Halloween")
+    engine.synthesize("Again!")
+
+    assert loads == [str(voice)]  # loaded once
+    assert spoken == ["Hello.", "Boo! Happy Halloween", "Again!"]  # warm-up, then reuse
+    with wave.open(__import__("io").BytesIO(first)) as w:
+        assert w.getnframes() == 160

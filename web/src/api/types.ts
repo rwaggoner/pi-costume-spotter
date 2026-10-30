@@ -63,7 +63,9 @@ export interface Detection {
 export type WireEvent =
   | FrameProcessedEvent
   | NewVisitorSpottedEvent
+  | GroupSpottedEvent
   | CostumeIdentifiedEvent
+  | GreetingReadyEvent
   | SightingLoggedEvent
   | CommentSpokenEvent
   | SystemStatusEvent;
@@ -83,6 +85,22 @@ export interface NewVisitorSpottedEvent extends EventBase {
   kind: "NewVisitorSpotted";
   visitor_id: number;
   box: BoundingBox;
+  group_id: string;
+}
+
+/** People who arrived together; snapshots are stripped from the wire. */
+export interface GroupSpottedEvent extends EventBase {
+  kind: "GroupSpotted";
+  group_id: string;
+  visitors: { visitor_id: number; box: BoundingBox }[];
+}
+
+/** The words spoken for a group: greeting, plus shout-outs for small groups. */
+export interface GreetingReadyEvent extends EventBase {
+  kind: "GreetingReady";
+  group_id: string;
+  text: string;
+  sighting_ids: string[];
 }
 
 export interface CostumeIdentifiedEvent extends EventBase {
@@ -95,6 +113,8 @@ export interface CostumeIdentifiedEvent extends EventBase {
   source: string;
   box: BoundingBox;
   detector: string;
+  group_id: string;
+  group_size: number;
 }
 
 export interface SightingLoggedEvent extends EventBase {

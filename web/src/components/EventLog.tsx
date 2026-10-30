@@ -7,6 +7,8 @@ import type { LogEntry } from "../hooks/useEventSocket";
 
 const KIND_ICONS: Record<string, string> = {
   NewVisitorSpotted: "👀",
+  GroupSpotted: "👥",
+  GreetingReady: "💬",
   CostumeIdentified: "🎃",
   SightingLogged: "💾",
   CommentSpoken: "🔊",

@@ -30,6 +30,12 @@ function describe(event: WireEvent): string {
   switch (event.kind) {
     case "NewVisitorSpotted":
       return `Visitor #${event.visitor_id} spotted`;
+    case "GroupSpotted":
+      return event.visitors.length === 1
+        ? "Identifying the visitor…"
+        : `Group of ${event.visitors.length} — identifying them together…`;
+    case "GreetingReady":
+      return `Greeting: “${event.text}”`;
     case "CostumeIdentified":
       return event.costume
         ? `Identified: ${event.costume} (${event.confidence}) — “${event.comment}”`
@@ -100,12 +106,18 @@ export function useEventSocket() {
           setComponentStatus((prev) => ({ ...prev, [event.component]: event }));
         }
         if (!SILENT_KINDS.has(event.kind)) {
-          setLog((prev) =>
-            [
-              { id: nextId.current++, timestamp: event.timestamp, kind: event.kind, text: describe(event) },
+          const text = describe(event);
+          setLog((prev) => {
+            // A group's greeting is one utterance but one CommentSpoken per
+            // sighting; log it once.
+            if (event.kind === "CommentSpoken" && prev[0]?.kind === event.kind && prev[0].text === text) {
+              return prev;
+            }
+            return [
+              { id: nextId.current++, timestamp: event.timestamp, kind: event.kind, text },
               ...prev, // newest first (06-F7)
-            ].slice(0, LOG_CAP),
-          );
+            ].slice(0, LOG_CAP);
+          });
         }
       };
 

@@ -29,6 +29,10 @@ class _TrackedVisitor:
     box: BoundingBox
     last_seen: float
     consecutive_hits: int = 1
+    # Frames missed since the last hit. A detector blinks on capes, masks and
+    # odd poses; a candidate survives up to max_misses blinks before its count
+    # restarts (02-F3).
+    misses: int = 0
     announced: bool = False
     # Best snapshot so far = the frame where they appeared largest (≈ closest,
     # most visible — 02-F5). Kept only until announcement, then freed.
@@ -50,7 +54,8 @@ class VisitorTracker:
     """Matches detections across frames; announces each visitor exactly once (02-F2)."""
 
     iou_threshold: float = 0.3  # 02-F1: minimum overlap to be "the same person"
-    min_hits: int = 5           # 02-F3: consecutive frames before announcing
+    min_hits: int = 3           # 02-F3: frames a person must be seen before announcing
+    max_misses: int = 2         # 02-F3: missed frames tolerated while building those hits
     retire_seconds: float = 30.0  # 02-F4: absence before the visitor is forgotten
 
     _visitors: dict[int, _TrackedVisitor] = field(default_factory=dict)
@@ -83,12 +88,17 @@ class VisitorTracker:
             if self._just_became_announceable(visitor):
                 announced.append(self._announce(visitor))
 
-        # "Consecutive" means consecutive (02-F3): a candidate that skipped a frame
-        # starts its stability count over. Announced visitors keep their identity
-        # through brief occlusions — only the retire timeout forgets them.
+        # Stability with tolerance (02-F3): a candidate may miss up to max_misses
+        # frames in a row and keep its count; one more and it starts over. A
+        # one-frame detector blink no longer costs a whole restart, which was the
+        # main source of slow greetings for costumes YOLO finds unevenly.
+        # Announced visitors keep their identity through occlusions — only the
+        # retire timeout forgets them.
         for visitor in self._visitors.values():
             if visitor.visitor_id not in matched_visitors and not visitor.announced:
-                visitor.consecutive_hits = 0
+                visitor.misses += 1
+                if visitor.misses > self.max_misses:
+                    visitor.consecutive_hits = 0
 
         # Anything left unmatched starts life as a 1-hit candidate. A YOLO
         # flicker on a shadow dies here quietly, min_hits frames short of an event.
@@ -105,6 +115,7 @@ class VisitorTracker:
     def _advance(self, v: _TrackedVisitor, det: Detection, frame: np.ndarray, now: float) -> None:
         v.box = det.box
         v.last_seen = now
+        v.misses = 0
         v.consecutive_hits += 1
         if not v.announced:
             self._remember_best_crop(v, det.box, frame)
@@ -131,6 +142,17 @@ class VisitorTracker:
                  if now - v.last_seen > self.retire_seconds]
         for vid in stale:
             del self._visitors[vid]
+
+    def pending_count(self) -> int:
+        """People in view right now who are on their way to being announced.
+
+        The group assembler (grouping.py) waits for these before closing a group,
+        so friends arriving a step apart are greeted together. Counts only
+        candidates seen in the latest frame with at least 2 hits — a single-frame
+        blink on a shadow must not hold a group open.
+        """
+        return sum(1 for v in self._visitors.values()
+                   if not v.announced and v.misses == 0 and v.consecutive_hits >= 2)
 
     @property
     def active_boxes(self) -> list[BoundingBox]:

@@ -18,6 +18,8 @@ and never turn into overlapping chaos when three kids arrive at once.
 | 04-F6 | Publish `CommentSpoken` after playback so the dashboard can show what was said and when. |
 | 04-F7 | In `dev` profile, audio output is a `NullAudioPlayer` that writes WAV files to a temp dir instead of playing them (laptops in CI have no speaker). |
 | 04-F8 | An optional audio filter (`SPOOKY_VOICE`, issue #15) transforms the synthesized WAV before playback — a rotating Halloween effect (pitch, echo, reverb) implemented in numpy, so it needs no extra install on any platform (ADR-010; it originally shelled out to `sox`). It is engine-agnostic and must degrade to unmodified audio if an effect fails (never silence the porch — a corollary of 04-F5). |
+| 04-F9 | **Groups are one utterance:** speech consumes `GreetingReady`, not `CostumeIdentified`. A group hears the greeting followed by each person's shout-out when the group has at most `SHOUT_OUT_MAX_GROUP` people (default 3); bigger groups hear only the greeting. `CommentSpoken` is published once per sighting covered. |
+| 04-F10 | **Voice kept loaded:** the Piper voice model is loaded once at startup (with a warm-up), not per comment — loading costs ~2 s, synthesis with a loaded voice ~0.4 s. |
 
 ## Non-functional requirements
 

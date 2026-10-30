@@ -1,4 +1,8 @@
-"""The speech subscriber: CostumeIdentified → synthesize → play → CommentSpoken.
+"""The speech subscriber: GreetingReady → synthesize → play → CommentSpoken.
+
+One GreetingReady per group of visitors (04-F9): a lone visitor's comment, or a
+group greeting followed by short shout-outs. The whole thing is synthesized as
+ONE utterance, so a group never waits behind a queue of separate clips.
 
 The queueing rules of requirements 04 fall out of the bus's design rather than
 needing bespoke machinery:
@@ -8,7 +12,9 @@ needing bespoke machinery:
   strictly serialized.
 - **Drop stale, keep fresh (04-F4):** the subscription's bounded queue is sized
   to SPEECH_QUEUE_MAX, and a full bus queue sheds the OLDEST event. A comment
-  about someone who wandered off 40 seconds ago is worse than silence.
+  about someone who wandered off 40 seconds ago is worse than silence. Because
+  a whole group is one event, the members of a group are never dropped
+  individually.
 - **Never fatal (04-F5):** any engine/player failure publishes
   ``CommentSpoken(spoken=False)`` and the pipeline rolls on.
 
@@ -21,7 +27,7 @@ via the same 04-F5 handler.
 import asyncio
 import logging
 
-from costume_spotter.events import CommentSpoken, CostumeIdentified, EventBus, SystemStatus
+from costume_spotter.events import CommentSpoken, EventBus, GreetingReady, SystemStatus
 from costume_spotter.events.events import BaseEvent
 from costume_spotter.speech.base import AudioPlayer, TtsEngine
 
@@ -37,29 +43,31 @@ class SpeechService:
         self._engine = engine
         self._player = player
         self._filter = audio_filter  # optional WAV→WAV transform (e.g. SpookyVoice)
-        bus.subscribe(self.on_costume_identified, to=(CostumeIdentified,),
+        bus.subscribe(self.on_greeting, to=(GreetingReady,),
                       name="speech.service", queue_size=queue_max)
 
-    async def on_costume_identified(self, event: BaseEvent) -> None:
-        assert isinstance(event, CostumeIdentified)
+    async def on_greeting(self, event: BaseEvent) -> None:
+        assert isinstance(event, GreetingReady)
         spoken = False
         try:
             # Synthesis and playback are blocking (subprocess / network / ALSA);
             # to_thread keeps the loop responsive (04-N3). Serialization is
             # preserved because *this handler* awaits completion before the bus
             # hands it the next event.
-            wav = await asyncio.to_thread(self._engine.synthesize, event.comment)
+            wav = await asyncio.to_thread(self._engine.synthesize, event.text)
             if self._filter is not None:
                 wav = await asyncio.to_thread(self._filter.apply, wav)
             await asyncio.to_thread(self._player.play, wav)
             spoken = True
             self._bus.publish(SystemStatus(component="speech", ok=True))
         except Exception as exc:
-            logger.warning("speech failed for sighting %s: %s", event.sighting_id, exc)
+            logger.warning("speech failed for group %s: %s", event.group_id, exc)
             self._bus.publish(SystemStatus(component="speech", ok=False, detail=str(exc)))
-        self._bus.publish(CommentSpoken(
-            sighting_id=event.sighting_id,
-            text=event.comment,
-            engine=self._engine.name,
-            spoken=spoken,
-        ))
+        # One CommentSpoken per sighting, so storage marks every member spoken (04-F6).
+        for sighting_id in event.sighting_ids:
+            self._bus.publish(CommentSpoken(
+                sighting_id=sighting_id,
+                text=event.text,
+                engine=self._engine.name,
+                spoken=spoken,
+            ))

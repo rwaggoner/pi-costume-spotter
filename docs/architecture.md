@@ -29,9 +29,9 @@ flowchart TB
         direction TB
         CAM["camera/<br/>FrameSource<br/><i>Picamera2 | OpenCV</i>"]
         DET["detection/<br/>Detector<br/><i>Hailo | IMX500 | Mock</i>"]
-        TRK["tracking/<br/>VisitorTracker<br/><i>IoU matching, dedupe</i>"]
+        TRK["tracking/<br/>VisitorTracker + GroupAssembler<br/><i>IoU matching, dedupe,<br/>arrivals grouped</i>"]
         BUS(("events/<br/>EventBus<br/><i>asyncio pub/sub</i>"))
-        VIS["vision/<br/>CostumeIdentifier<br/><i>Claude Vision, best-of-3 crops</i>"]
+        VIS["vision/<br/>CostumeIdentifier<br/><i>Claude Vision, one call per group</i>"]
         SPK["speech/<br/>SpeechService<br/><i>Piper | Google TTS<br/>+ optional spooky filter</i>"]
         STO["storage/<br/>SightingRepository<br/><i>SQLAlchemy + SQLite</i>"]
         SNAP["storage/<br/>SnapshotStore<br/><i>JPEG files + pruning</i>"]
@@ -40,9 +40,9 @@ flowchart TB
 
         CAM -->|frames| DET
         DET -->|detections per frame| TRK
-        TRK -->|NewVisitorSpotted| BUS
+        TRK -->|NewVisitorSpotted, GroupSpotted| BUS
         BUS --> VIS
-        VIS -->|CostumeIdentified| BUS
+        VIS -->|CostumeIdentified, GreetingReady| BUS
         BUS --> SPK
         BUS --> STO
         BUS --> SNAP
@@ -67,8 +67,13 @@ flowchart TB
 ## The life of a sighting
 
 The sequence below is the core loop of the whole system. Note that after the tracker
-publishes `NewVisitorSpotted`, every downstream step is an independent subscriber —
+publishes a group, every downstream step is an independent subscriber —
 if the Claude API is slow, video streaming and logging are unaffected.
+
+People who arrive together are one *group* (a lone visitor is a group of one):
+one Claude call identifies everyone, each person is logged as their own
+sighting, and the speaker says one line, a greeting plus short shout-outs for
+groups of up to `SHOUT_OUT_MAX_GROUP` (02-F7, 03-F9, 04-F9).
 
 ```mermaid
 sequenceDiagram
@@ -86,17 +91,17 @@ sequenceDiagram
         Det->>Trk: [person boxes]
         Trk->>Trk: match boxes to known visitors (IoU)
     end
-    Note over Trk: A box that matches no known visitor,<br/>seen stably for N frames → new visitor
-    Trk->>Bus: NewVisitorSpotted(1-3 crops, box)
-    Bus-->>WS: live log entry ("Visitor #17 spotted")
+    Note over Trk: Seen in N frames (≤ M misses) → announced.<br/>Others about to be announced? Wait ≤ 1 s for them.
+    Trk->>Bus: NewVisitorSpotted × each person, then GroupSpotted(crops)
+    Bus-->>WS: live log entry ("Group of 3 — identifying them together…")
     Bus->>Vis: (subscriber)
-    Vis->>Vis: send crops + tonight's costume history<br/>to Claude Vision (one structured call)
-    Vis->>Bus: CostumeIdentified(label, confidence, comment)
+    Vis->>Vis: one Claude Vision call: a photo per person,<br/>returns greeting + per-person costume & shout-out
+    Vis->>Bus: CostumeIdentified × each person, then GreetingReady(text)
     par independent subscribers
         Bus->>Sto: save sighting row + snapshot file
         Sto->>Bus: SightingLogged(id)
     and
-        Bus->>Spk: synthesize comment → optional spooky filter → speaker
+        Bus->>Spk: GreetingReady → synthesize (voice kept loaded)<br/>→ optional spooky filter → speaker
         Spk->>Bus: CommentSpoken
     and
         Bus-->>WS: live log entry ("T-Rex! 🦖 …comment…")
@@ -110,8 +115,10 @@ Events are frozen dataclasses in [`edge/costume_spotter/events/events.py`](../ed
 | Event | Published by | Consumed by | Payload highlights |
 |-------|--------------|-------------|--------------------|
 | `FrameProcessed` | pipeline | API (MJPEG/overlay) | annotated frame, boxes, fps |
-| `NewVisitorSpotted` | tracker | identifier, API | visitor id, primary snapshot + up to 2 extra crops (JPEG bytes, dropped from the WS wire), box |
-| `CostumeIdentified` | identifier | storage, speech, API, cloudsync | costume label, confidence, comment |
+| `NewVisitorSpotted` | pipeline | API | visitor id, snapshot (JPEG bytes, dropped from the WS wire), box, group id |
+| `GroupSpotted` | pipeline (GroupAssembler) | identifier, API | group id, one snapshot + box per person |
+| `CostumeIdentified` | identifier | storage, API, cloudsync | per person: costume label, confidence, comment (their shout-out, or the greeting when alone), group id/size |
+| `GreetingReady` | identifier | speech, API | group id, the text to speak, sighting ids covered |
 | `SightingLogged` | storage | API | sighting DB id, snapshot path |
 | `CommentSpoken` | speech | API | text, engine used, duration |
 | `SystemStatus` | all | API | component health heartbeats |
@@ -128,16 +135,20 @@ flowchart TD
     B -- yes --> C[Update that visitor's box<br/>and last-seen time]
     C --> D{Visitor already<br/>announced?}
     D -- yes --> E[Nothing to do]
-    D -- no --> F{Seen stably for<br/>≥ N consecutive frames?}
+    D -- no --> F{Seen in ≥ N frames,<br/>missing ≤ M in a row?}
     F -- no --> E
-    F -- yes --> G[Mark announced, keep the largest crop<br/>+ up to 2 distinct earlier moments]
-    G --> H[/Publish NewVisitorSpotted/]
+    F -- yes --> G[Mark announced, keep the largest crop]
+    G --> H{Others in view about<br/>to be announced?}
+    H -- "no" --> P[/Publish the group now/]
+    H -- "yes" --> W[Wait for them, at most<br/>GROUP_WAIT_SECONDS] --> P
     B -- no --> I[Start tracking as candidate visitor]
     J[Every frame: visitors unseen<br/>for > T seconds] --> K[Retire visitor<br/>— may be re-announced if they return]
 ```
 
-The stability window (`N` frames) exists because YOLO occasionally fires on a shadow
-for one frame; requiring consecutive hits filters those out. The retirement timeout
+The stability window (`N` frames, default 3) exists because YOLO occasionally fires
+on a shadow for one frame. It tolerates up to `M` missed frames (default 2) while
+counting, because detectors also *blink* on real people in capes and masks, and
+restarting the count on every blink was the main cause of slow greetings. The retirement timeout
 (`T`) means someone who leaves and comes back 10 minutes later is greeted again —
 acceptable for a porch on Halloween, and much simpler than re-identification
 (deliberately out of scope; see README privacy section).

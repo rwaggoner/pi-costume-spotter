@@ -37,3 +37,18 @@ def crop_box(frame: np.ndarray, box: BoundingBox, pad_fraction: float = 0.15) ->
     x2 = min(w, box.x + box.width + pad_x)
     y2 = min(h, box.y + box.height + pad_y)
     return frame[y1:y2, x1:x2]
+
+
+def shrink(frame: np.ndarray, max_side: int) -> np.ndarray:
+    """Downscale so the longest side is at most ``max_side`` (never upscales).
+
+    Snapshots go to Claude: a 512-px crop identifies a costume as well as a
+    full-resolution one, but uploads faster and costs fewer image tokens, so
+    the greeting arrives sooner.
+    """
+    h, w = frame.shape[:2]
+    if max(h, w) <= max_side:
+        return frame
+    scale = max_side / max(h, w)
+    size = (max(1, round(w * scale)), max(1, round(h * scale)))
+    return np.asarray(Image.fromarray(frame).resize(size, Image.LANCZOS))

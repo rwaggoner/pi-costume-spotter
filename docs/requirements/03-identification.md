@@ -19,7 +19,8 @@ hardware can do well ([ADR-002](../decisions/002-claude-vision.md)).
 | 03-F5 | Publish `CostumeIdentified` on success. |
 | 03-F6 | **Graceful degradation:** if the API is unreachable, times out (configurable, default 15 s), or returns malformed output after retries, fall back to `costume: "mystery guest"` with a canned comment — the pipeline (logging, speech) continues. Internet failure must never stop the porch show. |
 | 03-F7 | Support a `pretend` mode (no API key configured) that returns rotating canned identifications, so developers and CI exercise the full event flow with zero cost/credentials. |
-| 03-F8 | Retry transient API failures (429/5xx/network) with exponential backoff, max 2 retries. |
+| 03-F8 | Retry transient API failures (429/5xx/network) with short backoff (0.5 s, then 1 s), max 2 retries — the visitor is standing at the door. |
+| 03-F9 | **One call per group:** a `GroupSpotted` is identified with ONE request containing a photo per person (labeled "Person 1..N", downscaled to ≤ 512 px). The response holds a greeting for everyone (≤ 20 words) and, per person, a costume label, confidence and a shout-out (≤ 8 words). Each person still produces their own `CostumeIdentified`; the words to speak go out once as `GreetingReady`. |
 
 ## Non-functional requirements
 

@@ -1,34 +1,40 @@
 """Piper TTS engine: local, offline, free — the default voice (ADR-005).
 
-Runs piper as a subprocess rather than calling its Python API: the CLI is the
-stable, documented surface, it keeps the ONNX runtime out of our process (a
-crash there can't take down the pipeline), and a subprocess per comment is
-trivially cheap at "a few visitors per minute" scale.
+**Voice kept loaded (in-process).** Loading the voice model takes ~1.5-2 s;
+synthesizing a sentence with it already loaded takes ~0.3-0.5 s. The original
+design ran the ``piper`` CLI once per comment, paying the load every time, and
+that was the single biggest delay between a visitor arriving and the porch
+speaking. So the engine now loads ``PiperVoice`` once at startup (plus a tiny
+warm-up synthesis, so the first visitor doesn't pay ONNX Runtime's first-run
+cost) and reuses it.
 
-Portability (ADR-010), learned the hard way on Windows:
+The trade-off is isolation: a crash inside piper's ONNX runtime would now take
+the app down instead of one subprocess. In practice synthesis errors surface as
+Python exceptions, which SpeechService already turns into a non-fatal
+``CommentSpoken(spoken=False)`` (04-F5).
 
-- **Launcher.** Prefer ``python -m piper`` with *our* interpreter. That works
-  when the app is started as ``.venv\\Scripts\\python.exe -m costume_spotter``
-  from Task Scheduler, where the venv was never "activated" and the ``piper``
-  script is not on PATH. The bare ``piper`` CLI is the fallback.
-- **Files, not pipes.** Piper's ``--output-file -`` (WAV to stdout) re-opens a
-  still-open temp file by name, which Windows forbids, and stdin text is decoded
-  with the console code page there. So text goes in via a UTF-8 file and the WAV
-  comes back via a file — identical behavior on every OS.
+**CLI fallback.** If the ``piper`` Python package isn't importable but a
+``piper`` executable is on PATH, the engine falls back to one subprocess per
+comment. It passes text and WAV through files rather than pipes: piper's
+``--output-file -`` re-opens a locked temp file (fails on Windows), and stdin
+is decoded with the console code page there (ADR-010).
 """
 
 import importlib.util
+import io
 import shutil
 import subprocess
 import sys
 import tempfile
+import threading
+import wave
 from pathlib import Path
 
 from costume_spotter.speech.base import TtsEngine
 
 
 def piper_command() -> list[str] | None:
-    """How to launch piper here, or None if it isn't installed."""
+    """How to launch the piper CLI here, or None if it isn't installed."""
     if importlib.util.find_spec("piper") is not None:
         return [sys.executable, "-m", "piper"]
     if shutil.which("piper") is not None:
@@ -42,18 +48,42 @@ class PiperTtsEngine(TtsEngine):
 
     name = "piper"
 
-    def __init__(self, voice_path: str) -> None:
-        command = piper_command()
-        if command is None:  # fail fast at wiring time, not first visitor
-            raise RuntimeError("TTS_ENGINE=piper but piper is not installed "
-                               "(pip install piper-tts)")
+    def __init__(self, voice_path: str, in_process: bool | None = None) -> None:
+        """``in_process``: None = keep the voice loaded when the piper package is
+        importable, else use the CLI; True/False forces one (tests use False)."""
         if not Path(voice_path).is_file():
             raise RuntimeError(f"PIPER_VOICE_PATH not found: {voice_path} — download a voice "
                                "with: python -m piper.download_voices en_US-lessac-medium")
-        self._command = command
         self._voice_path = str(voice_path)
+        if in_process is None:
+            in_process = importlib.util.find_spec("piper") is not None
+        self._voice = None
+        self._lock = threading.Lock()  # PiperVoice isn't documented as thread-safe
+
+        if in_process:
+            from piper import PiperVoice
+
+            self._voice = PiperVoice.load(self._voice_path)
+            self.synthesize("Hello.")  # warm-up: the first ONNX run is the slow one
+        else:
+            command = piper_command()
+            if command is None:  # fail fast at wiring time, not first visitor
+                raise RuntimeError("TTS_ENGINE=piper but piper is not installed "
+                                   "(pip install piper-tts)")
+            self._command = command
 
     def synthesize(self, text: str) -> bytes:
+        if self._voice is not None:
+            return self._synthesize_in_process(text)
+        return self._synthesize_cli(text)
+
+    def _synthesize_in_process(self, text: str) -> bytes:
+        buf = io.BytesIO()
+        with self._lock, wave.open(buf, "wb") as wav_file:
+            self._voice.synthesize_wav(" ".join(text.split()), wav_file)
+        return buf.getvalue()
+
+    def _synthesize_cli(self, text: str) -> bytes:
         with tempfile.TemporaryDirectory(prefix="piper-") as tmp:
             text_path = Path(tmp) / "in.txt"
             wav_path = Path(tmp) / "out.wav"
