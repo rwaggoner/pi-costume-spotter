@@ -26,12 +26,20 @@ The server only starts listening once the model is loaded and warmed up, so
 import argparse
 import io
 import json
+import os
 import sys
 import threading
 import time
 import wave
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+
+# Run as a script, Python puts THIS folder first on sys.path, and the app's
+# speech/chatterbox.py here would then shadow the real `chatterbox` package
+# ("No module named 'costume_spotter'"). Take the folder back off.
+_HERE = os.path.normcase(os.path.dirname(os.path.abspath(__file__)))
+sys.path[:] = [p for p in sys.path
+               if os.path.normcase(os.path.abspath(p or os.curdir)) != _HERE]
 
 DEFAULT_PORT = 8010
 MAX_TEXT = 600  # characters; a group greeting plus shout-outs is ~250
@@ -53,6 +61,12 @@ def check() -> int:
         print("torch   NOT INSTALLED")
         return 1
     print(f"torch   {torch.__version__} (CUDA {torch.version.cuda})")
+    try:
+        from chatterbox.tts_turbo import ChatterboxTurboTTS  # noqa: F401
+    except ImportError as exc:
+        print(f"FAIL    chatterbox is not importable: {exc}")
+        return 1
+    print("chatterbox ok")
     if not torch.cuda.is_available():
         print("gpu     none usable: CUDA is not available to PyTorch "
               "(CPU-only build, or no NVIDIA driver)")
@@ -64,11 +78,6 @@ def check() -> int:
     if arch not in supported:
         # RTX 50-series (sm_120) needs a PyTorch built for CUDA 12.8 or newer.
         print(f"FAIL    this PyTorch has no kernels for {arch} (has: {' '.join(supported)})")
-        return 1
-    try:
-        import chatterbox  # noqa: F401
-    except ImportError as exc:
-        print(f"FAIL    chatterbox is not importable: {exc}")
         return 1
     print("OK      ready for Chatterbox on the GPU")
     return 0

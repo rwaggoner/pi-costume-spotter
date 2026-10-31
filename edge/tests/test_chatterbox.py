@@ -243,3 +243,24 @@ def test_tts_engine_chatterbox_is_wired_from_settings(tmp_path, monkeypatch):
     assert isinstance(engine, ChatterboxTtsEngine)
     assert engine._fallback is None and engine._timeout == 2  # noqa: SLF001
     assert engine._process is None  # no CHATTERBOX_PYTHON: an already-running server
+
+
+def test_server_script_imports_the_real_chatterbox_package(tmp_path):
+    """Run as a script, the server's own folder (holding the app's
+    speech/chatterbox.py) must not shadow the chatterbox package."""
+    import os
+    import subprocess
+
+    (tmp_path / "torch").mkdir()
+    (tmp_path / "torch" / "__init__.py").write_text(
+        "__version__ = 'stub'\n"
+        "class version:\n    cuda = None\n"
+        "class cuda:\n    @staticmethod\n    def is_available():\n        return False\n")
+    (tmp_path / "chatterbox").mkdir()
+    (tmp_path / "chatterbox" / "__init__.py").write_text("")
+    (tmp_path / "chatterbox" / "tts_turbo.py").write_text("class ChatterboxTurboTTS: pass\n")
+    result = subprocess.run(
+        [sys.executable, str(chatterbox.SERVER_SCRIPT), "--check"],
+        capture_output=True, text=True, timeout=60,
+        env={**os.environ, "PYTHONPATH": str(tmp_path)})
+    assert "chatterbox ok" in result.stdout, result.stdout + result.stderr
