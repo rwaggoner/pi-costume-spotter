@@ -85,6 +85,12 @@ class Voice:
             raise SystemExit("CUDA is not available; run with --check to see why")
         started = time.perf_counter()
         self._model = ChatterboxTurboTTS.from_pretrained(device=device)
+        # chatterbox 0.1.7 bug under NumPy 2 (Python 3.13+): the loudness gain
+        # is a float64 scalar, which now promotes the clip to float64, and the
+        # tokenizer then fails ("expected scalar type Double but found Float").
+        normalize = self._model.norm_loudness
+        self._model.norm_loudness = (
+            lambda wav, sr, *a, **kw: normalize(wav, sr, *a, **kw).astype("float32"))
         if voice_clip is not None:
             # Done once here: generate(audio_prompt_path=...) would redo it per line.
             self._model.prepare_conditionals(str(voice_clip))

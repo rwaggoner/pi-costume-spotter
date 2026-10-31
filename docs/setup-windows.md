@@ -169,8 +169,8 @@ for you.
    ```powershell
    powershell -ExecutionPolicy Bypass -File edge\deploy\windows\setup-chatterbox.ps1
    ```
-   It needs 64-bit **Python 3.11** (3.12 or 3.13 also work) next to your other
-   Pythons. It installs PyTorch for CUDA 12.8, which RTX 50-series cards need,
+   It uses 64-bit **Python 3.11-3.14**: the one the app already uses is fine,
+   and 3.11 or 3.12 is picked first if installed. It installs PyTorch for CUDA 12.8, which RTX 50-series cards need,
    checks the GPU, downloads the model, and times a few porch lines. Play
    `edge\chatterbox-sample.wav` to hear it.
 2. In `edge\.env` set the following, keeping `PIPER_VOICE_PATH` as it is:
