@@ -155,6 +155,53 @@ otherwise in that window.
 
 (With `update.cmd`, add options after it: `update.cmd -NoPull -SkipDashboard`.)
 
+## 9. A more natural voice: Chatterbox (optional, NVIDIA GPU)
+
+[Chatterbox Turbo](https://github.com/resemble-ai/chatterbox) (Resemble AI, MIT
+license) sounds far more human than Piper. It needs an **NVIDIA GPU**, since on
+the processor alone a greeting takes 15-50 s, and it runs on Windows only (the
+Pi stays on Piper). It runs as a separate voice server with its own Python
+environment, `edge\.venv-chatterbox`, because it needs PyTorch (about 3 GB) and
+library versions that would clash with the app's. The app starts and stops it
+for you.
+
+1. Build it once. This takes 10-20 minutes and downloads about 4.5 GB:
+   ```powershell
+   powershell -ExecutionPolicy Bypass -File edge\deploy\windows\setup-chatterbox.ps1
+   ```
+   It needs 64-bit **Python 3.11** (3.12 or 3.13 also work) next to your other
+   Pythons. It installs PyTorch for CUDA 12.8, which RTX 50-series cards need,
+   checks the GPU, downloads the model, and times a few porch lines. Play
+   `edge\chatterbox-sample.wav` to hear it.
+2. In `edge\.env` set the following, keeping `PIPER_VOICE_PATH` as it is:
+   ```
+   TTS_ENGINE=chatterbox
+   CHATTERBOX_PYTHON=.venv-chatterbox\Scripts\python.exe
+   ```
+3. Run `update.cmd`.
+
+How it behaves:
+
+- **Piper still speaks:**
+  - while Chatterbox loads, which takes 10-30 s after the app starts;
+  - if Chatterbox is down;
+  - if a sentence takes longer than `CHATTERBOX_TIMEOUT_SECONDS` (default 4).
+
+  Visitors are never left in silence, and one greeting never switches voices
+  midway.
+- **Speaking starts after the first sentence.** The rest of a group's greeting
+  is made while the first sentence plays.
+- **Your own voice (optional):** set `CHATTERBOX_VOICE_CLIP` to a WAV of about
+  10 seconds of one person talking, with no music or background noise. Your own
+  best spooky voice works well. Don't use a recording of a celebrity or a
+  character.
+- **Logs:** the voice server writes to `edge\data\logs\chatterbox.log`, which
+  shows how long each line took.
+- **Watermark:** Chatterbox marks every clip with an inaudible watermark.
+
+To time it again later: `setup-chatterbox.ps1 -BenchOnly`. Under about 1.5 s per
+line feels instant.
+
 ## Troubleshooting
 
 | Symptom | Likely cause |
@@ -166,6 +213,7 @@ otherwise in that window.
 | `ONNX_PROVIDER=directml but DmlExecutionProvider isn't available` | Both ONNX Runtimes are installed. Fix: `pip uninstall -y onnxruntime onnxruntime-directml` then `pip install onnxruntime-directml` (in the venv) |
 | No sound, no error | Wrong default output device (§4), or `TTS_ENGINE` isn't `piper` |
 | `PIPER_VOICE_PATH not found` | Re-run `setup.ps1`, or fix the path in `.env` |
+| Still Piper's voice with `TTS_ENGINE=chatterbox` | Wait 30 s after start; then check `edge\data\logs\chatterbox.log`. `setup-chatterbox.ps1 -BenchOnly` re-checks the GPU (§9) |
 | Low FPS | Expect roughly 8–15 FPS for `yolov8n` on a modern CPU. Try `-Gpu`, or lower `FRAME_WIDTH`/`FRAME_HEIGHT` |
 | Dashboard 404 at `/` | The dashboard isn't built: install Node.js and re-run `setup.ps1` |
 | `onnxruntime` … `from versions: none` during setup | The venv uses an unsupported Python (too new, or 32-bit). `setup.ps1` now detects this. Delete `edge\.venv`, make sure Python 3.11–3.14 64-bit is installed, and re-run |

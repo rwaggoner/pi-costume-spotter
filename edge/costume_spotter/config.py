@@ -91,8 +91,14 @@ class Settings(BaseSettings):
     max_images_per_call: int = 8  # extras fill this budget after everyone's best photo
 
     # --- Speech (docs/requirements/04-speech.md) ---
-    tts_engine: str = "null"  # piper | google | null
+    tts_engine: str = "null"  # piper | chatterbox | google | null
     piper_voice_path: Path | None = None
+    # Chatterbox (NVIDIA GPU, own venv; speech/chatterbox.py). Piper, when
+    # PIPER_VOICE_PATH is set, speaks while it loads or if it's down/slow.
+    chatterbox_url: str = "http://127.0.0.1:8010"
+    chatterbox_python: Path | None = None  # set = the app starts the voice server
+    chatterbox_voice_clip: Path | None = None  # unset = Chatterbox's built-in voice
+    chatterbox_timeout_seconds: float = 4.0  # per sentence, then the fallback speaks
     audio_device: str | None = None  # ALSA device on the Pi, e.g. "plughw:1,0" (Pi only)
     speech_queue_max: int = 3  # 04-F4: older unspoken comments beyond this are dropped
     spooky_voice: bool = False  # issue #15: rotate spooky voice effects (pure numpy)

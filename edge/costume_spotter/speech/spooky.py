@@ -189,12 +189,21 @@ class SpookyVoice:
                  runner: EffectRunner | None = None) -> None:
         self._presets = presets
         self._cycle = cycle(presets)
+        self._last: SpookyPreset | None = None
         self._runner = runner or apply_preset
 
-    def apply(self, wav_bytes: bytes) -> bytes:
+    supports_continuing = True  # SpeechService: later clips of one utterance
+
+    def apply(self, wav_bytes: bytes, *, continuing: bool = False) -> bytes:
         """Return spookified WAV, or the input unchanged if the effect errors —
-        audio must never be lost to the effect (04-F5)."""
-        preset = next(self._cycle)  # rotate: one style per spoken comment
+        audio must never be lost to the effect (04-F5).
+
+        ``continuing``: this clip continues the previous one (the same greeting
+        spoken in parts), so it keeps that clip's preset instead of rotating.
+        """
+        if not continuing or self._last is None:
+            self._last = next(self._cycle)  # rotate: one style per spoken comment
+        preset = self._last
         try:
             out = self._runner(wav_bytes, preset)
             logger.info("spooky voice: %s", preset.name)

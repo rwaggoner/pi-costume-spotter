@@ -26,6 +26,7 @@ models/
 __pycache__/
 *.py[cod]
 .venv/
+.venv-chatterbox/
 venv/
 *.egg-info/
 .pytest_cache/

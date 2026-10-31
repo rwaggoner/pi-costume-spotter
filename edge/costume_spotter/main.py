@@ -79,6 +79,17 @@ def build_tts_engine(settings: Settings) -> TtsEngine:
         if settings.piper_voice_path is None:
             raise ValueError("TTS_ENGINE=piper requires PIPER_VOICE_PATH (docs/setup-pi.md §5)")
         return PiperTtsEngine(str(settings.piper_voice_path))
+    if settings.tts_engine == "chatterbox":
+        from costume_spotter.speech.chatterbox import ChatterboxTtsEngine
+        fallback = None
+        if settings.piper_voice_path is not None:
+            from costume_spotter.speech.piper import PiperTtsEngine
+            fallback = PiperTtsEngine(str(settings.piper_voice_path))
+        return ChatterboxTtsEngine(settings.chatterbox_url, fallback,
+                                   timeout_seconds=settings.chatterbox_timeout_seconds,
+                                   server_python=settings.chatterbox_python,
+                                   voice_clip=settings.chatterbox_voice_clip,
+                                   log_dir=settings.data_dir / "logs")
     if settings.tts_engine == "google":
         from costume_spotter.speech.google_tts import GoogleTtsEngine
         return GoogleTtsEngine()
@@ -175,6 +186,7 @@ def build_application(settings: Settings) -> FastAPI:
                 task.cancel()
             await asyncio.gather(*tasks, return_exceptions=True)
             await bus.stop()
+            tts_engine.close()  # e.g. stop the Chatterbox voice server
 
     app.router.lifespan_context = lifespan
     return app

@@ -54,15 +54,37 @@ class SpeechService:
             # to_thread keeps the loop responsive (04-N3). Serialization is
             # preserved because *this handler* awaits completion before the bus
             # hands it the next event.
-            wav = await asyncio.to_thread(self._engine.synthesize, event.text)
-            if self._filter is not None:
-                wav = await asyncio.to_thread(self._filter.apply, wav)
-            await asyncio.to_thread(self._player.play, wav)
+            #
+            # An engine may hand the speech over in parts (synthesize_parts):
+            # each part plays while the next is synthesized, so a slow engine
+            # starts talking after its first sentence.
+            parts = self._engine.synthesize_parts(event.text)
+            wav = await asyncio.to_thread(next, parts, None)
+            first = True
+            while wav is not None:
+                if self._filter is not None:
+                    wav = await asyncio.to_thread(self._filter_part, wav, first)
+                playing = asyncio.create_task(asyncio.to_thread(self._player.play, wav))
+                try:
+                    wav = await asyncio.to_thread(next, parts, None)
+                finally:
+                    await playing  # never leave a clip playing behind an error
+                first = False
             spoken = True
             self._bus.publish(SystemStatus(component="speech", ok=True))
         except Exception as exc:
             logger.warning("speech failed for group %s: %s", event.group_id, exc)
             self._bus.publish(SystemStatus(component="speech", ok=False, detail=str(exc)))
+        self._publish_spoken(event, spoken)
+
+    def _filter_part(self, wav: bytes, first: bool) -> bytes:
+        # Later parts of one utterance keep the first part's effect (the spooky
+        # voice rotates presets per utterance, not per clip).
+        if not first and getattr(self._filter, "supports_continuing", False):
+            return self._filter.apply(wav, continuing=True)
+        return self._filter.apply(wav)
+
+    def _publish_spoken(self, event: GreetingReady, spoken: bool) -> None:
         # One CommentSpoken per sighting, so storage marks every member spoken (04-F6).
         for sighting_id in event.sighting_ids:
             self._bus.publish(CommentSpoken(

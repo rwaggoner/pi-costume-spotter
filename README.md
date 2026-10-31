@@ -23,8 +23,9 @@ with its trade-offs in an [Architecture Decision Record](docs/decisions/).
 4. **Identifies** the costume by sending the visitor's best few snapshots to the Claude
    Vision API — along with the costumes already seen tonight, so repeats get fresh jokes —
    which returns a costume label, a confidence score, and a witty one-liner in one structured call.
-5. **Speaks** the one-liner through a speaker (local Piper TTS by default, Google Cloud TTS
-   optional), with an optional rotating **spooky voice** effect for Halloween.
+5. **Speaks** the one-liner through a speaker (local Piper TTS by default; on Windows with an
+   NVIDIA GPU, the more natural [Chatterbox](docs/setup-windows.md#9-a-more-natural-voice-chatterbox-optional-nvidia-gpu)
+   voice; Google Cloud TTS optional), with an optional rotating **spooky voice** effect for Halloween.
 6. **Logs** every sighting to SQLite on the device, with a cropped snapshot.
 7. **Streams** the live feed, detection boxes, and a real-time event log to a React dashboard.
 8. **Publishes** (optionally) each sighting to GCP Pub/Sub, where a Kotlin service on
@@ -40,7 +41,7 @@ flowchart LR
         TRK -- NewVisitor event --> BUS((Async<br/>Event Bus))
         BUS --> ID[Costume Identifier<br/>Claude Vision API]
         BUS --> DB[(SQLite +<br/>snapshots)]
-        BUS --> TTS[Text-to-Speech<br/>Piper / Google<br/>+ optional spooky filter]
+        BUS --> TTS[Text-to-Speech<br/>Piper / Chatterbox / Google<br/>+ optional spooky filter]
         BUS --> WS[WebSocket<br/>broadcaster]
         BUS --> PUB[Pub/Sub<br/>publisher]
     end

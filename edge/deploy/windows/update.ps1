@@ -109,6 +109,8 @@ if ($task -and $task.State -eq "Running") {
 }
 # Any python running this folder's app, started by hand or left behind by the
 # task (stopping a task doesn't always stop the process it launched).
+# This also matches the Chatterbox voice server (edge\.venv-chatterbox, script
+# under costume_spotter\speech), which the app starts for TTS_ENGINE=chatterbox.
 $venvDir = Join-Path $EdgeDir ".venv"
 $running = @(Get-CimInstance Win32_Process -Filter "Name = 'python.exe'" -ErrorAction SilentlyContinue |
     Where-Object { $_.CommandLine -like "*costume_spotter*" -and
