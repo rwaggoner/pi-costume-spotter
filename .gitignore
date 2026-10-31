@@ -61,3 +61,4 @@ Thumbs.db
 # Generated audio from TTS test runs
 *.wav
 !edge/tests/fixtures/*.wav
+!voices/*.wav
