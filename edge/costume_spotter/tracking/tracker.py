@@ -36,9 +36,13 @@ class _TrackedVisitor:
     misses: int = 0
     announced: bool = False
     # Best snapshot so far (02-F5): the frame scoring highest on size (≈ closest)
-    # times sharpness (not blurred mid-stride). Kept only until announcement.
+    # times sharpness (not blurred mid-stride). Plus the FIRST sighting, so the
+    # identifier gets more than one look (02-F8). Kept only until announcement.
     best_crop: np.ndarray | None = None
     best_score: float = -1.0
+    best_frame: int = 0  # which sighting produced best_crop, for de-duplication
+    first_crop: np.ndarray | None = None
+    frames_seen: int = 0
 
 
 @dataclass(frozen=True)
@@ -47,8 +51,11 @@ class NewVisitor:
 
     visitor_id: int
     box: BoundingBox
-    snapshot: np.ndarray  # RGB crop; the pipeline JPEG-encodes it
+    snapshot: np.ndarray  # primary RGB crop (best); the pipeline JPEG-encodes it
     visitor_type: str = "person"  # person | dog | cat
+    # Up to two more distinct moments of the same visitor (02-F8), for the
+    # identifier only; storage keeps just the primary.
+    extra_snapshots: tuple[np.ndarray, ...] = ()
 
 
 @dataclass
@@ -58,6 +65,7 @@ class VisitorTracker:
     iou_threshold: float = 0.3  # 02-F1: minimum overlap to be "the same person"
     min_hits: int = 3           # 02-F3: frames a person must be seen before announcing
     max_misses: int = 2         # 02-F3: missed frames tolerated while building those hits
+    max_snapshots: int = 3      # 02-F8: photos per visitor (best + other moments); 1 = best only
     retire_seconds: float = 30.0  # 02-F4: absence before the visitor is forgotten
 
     _visitors: dict[int, _TrackedVisitor] = field(default_factory=dict)
@@ -91,7 +99,7 @@ class VisitorTracker:
             matched_visitors.add(visitor.visitor_id)
             self._advance(visitor, det, frame, now)
             if self._just_became_announceable(visitor):
-                announced.append(self._announce(visitor))
+                announced.append(self._announce(visitor, det, frame))
 
         # Stability with tolerance (02-F3): a candidate may miss up to max_misses
         # frames in a row and keep its count; one more and it starts over. A
@@ -134,19 +142,32 @@ class VisitorTracker:
         a crop 4x blurrier must be 2x bigger to win.
         """
         crop = imaging.crop_box(frame, box)
+        v.frames_seen += 1
+        if v.first_crop is None:
+            v.first_crop = crop.copy()
         score = box.area * (imaging.sharpness(crop) + 1.0) ** 0.5
         if score > v.best_score:
             v.best_score = score
             v.best_crop = crop.copy()
+            v.best_frame = v.frames_seen
 
     def _just_became_announceable(self, v: _TrackedVisitor) -> bool:
         return not v.announced and v.consecutive_hits >= self.min_hits
 
-    def _announce(self, v: _TrackedVisitor) -> NewVisitor:
+    def _announce(self, v: _TrackedVisitor, det: Detection, frame: np.ndarray) -> NewVisitor:
+        """Announce with the best crop first, then up to two other distinct
+        moments: the announcement frame and the first sighting (02-F8). One
+        blurred or half-turned frame no longer sinks the identification."""
         v.announced = True
-        assert v.best_crop is not None  # set on first sighting, by construction
-        out = NewVisitor(v.visitor_id, v.box, v.best_crop, visitor_type=v.label)
-        v.best_crop = None  # free the pixels; only the box is needed from here on
+        assert v.best_crop is not None and v.first_crop is not None  # set at first sighting
+        # De-duplicate by sighting number: the best crop may BE the latest or first.
+        by_frame: dict[int, np.ndarray] = {v.best_frame: v.best_crop}
+        by_frame.setdefault(v.frames_seen, imaging.crop_box(frame, det.box).copy())
+        by_frame.setdefault(1, v.first_crop)
+        primary, *extras = by_frame.values()
+        out = NewVisitor(v.visitor_id, v.box, primary, visitor_type=v.label,
+                         extra_snapshots=tuple(extras[:max(0, self.max_snapshots - 1)]))
+        v.best_crop = v.first_crop = None  # free the pixels; only the box is needed now
         return out
 
     def _retire_stale(self, now: float) -> None:

@@ -141,3 +141,37 @@ def test_a_dog_beside_a_kid_is_its_own_visitor():  # 01-F7
     announced = tracker.update([kid, dog], F, now=0.0)
     announced += tracker.update([kid, dog], F, now=0.1)
     assert sorted(v.visitor_type for v in announced) == ["dog", "person"]
+
+
+def _frame_with(value: int):
+    f = np.zeros((480, 640, 3), np.uint8)
+    f[:] = value
+    return f
+
+
+def test_announcement_carries_extra_moments_best_first():  # 02-F8
+    tracker = make_tracker(min_hits=3)
+    frames = [_frame_with(v) for v in (10, 20, 30)]
+    sizes = [(40, 80), (60, 120), (50, 100)]  # best (largest) is the 2nd sighting
+    announced = []
+    for i, ((w, h), f) in enumerate(zip(sizes, frames, strict=True)):
+        announced += tracker.update([detection(100, 100, w, h)], f, now=i * 0.1)
+    [v] = announced
+    assert v.snapshot.mean() == 20  # primary = best (2nd) moment
+    assert [int(s.mean()) for s in v.extra_snapshots] == [30, 10]  # announce frame, first
+
+
+def test_extras_are_never_duplicates_of_the_primary():  # 02-F8
+    tracker = make_tracker(min_hits=2)
+    announced = tracker.update([detection(100, 100, 40, 80)], _frame_with(10), now=0.0)
+    announced += tracker.update([detection(100, 100, 60, 120)], _frame_with(20), now=0.1)
+    [v] = announced  # best IS the announce frame: one extra (the first sighting)
+    assert v.snapshot.mean() == 20 and [int(s.mean()) for s in v.extra_snapshots] == [10]
+
+
+def test_snapshots_per_visitor_one_means_best_only():
+    tracker = VisitorTracker(min_hits=3, max_snapshots=1)
+    announced = []
+    for i in range(3):
+        announced += tracker.update([detection(100, 100, 40 + i, 80)], _frame_with(i), now=i)
+    assert announced[0].extra_snapshots == ()

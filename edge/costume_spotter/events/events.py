@@ -70,10 +70,17 @@ class BaseEvent:
         out: dict = {"kind": self.kind}
         for f in dataclasses.fields(self):
             value = getattr(self, f.name)
-            if isinstance(value, bytes):
+            if _holds_image_bytes(value):
                 continue  # images never ride the event socket
             out[f.name] = _jsonify(value)
         return out
+
+
+def _holds_image_bytes(value) -> bool:
+    """True for bytes and for non-empty collections of bytes (``extra_jpegs``)."""
+    if isinstance(value, bytes):
+        return True
+    return isinstance(value, (list, tuple)) and bool(value) and isinstance(value[0], bytes)
 
 
 def _jsonify(value):
@@ -83,7 +90,7 @@ def _jsonify(value):
     if dataclasses.is_dataclass(value) and not isinstance(value, type):
         # Nested values drop raw bytes too (GroupSpotted carries snapshots per person).
         return {f.name: _jsonify(getattr(value, f.name)) for f in dataclasses.fields(value)
-                if not isinstance(getattr(value, f.name), bytes)}
+                if not _holds_image_bytes(getattr(value, f.name))}
     if isinstance(value, (list, tuple)):
         return [_jsonify(v) for v in value]
     return value
@@ -128,9 +135,10 @@ class SpottedVisitor:
     """One member of a group: what identification needs about a visitor."""
 
     visitor_id: int
-    snapshot_jpeg: bytes
+    snapshot_jpeg: bytes  # primary (best) photo; the one storage keeps
     box: BoundingBox
     visitor_type: str = "person"  # person | dog | cat (01-F7)
+    extra_jpegs: tuple[bytes, ...] = ()  # other moments, identification only (02-F8)
 
 
 @dataclass(frozen=True)

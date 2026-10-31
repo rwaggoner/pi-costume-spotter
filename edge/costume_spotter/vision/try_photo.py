@@ -59,7 +59,7 @@ async def _run(paths: list[Path], group: bool, model: str, settings: Settings) -
         started = time.monotonic()
         # kind "" = let Claude decide person vs pet (the porch gets it from YOLO).
         reading = await identifier._identify_with_claude(  # noqa: SLF001
-            [(_load(p), "") for p in batch])
+            [((_load(p),), "") for p in batch])
         elapsed = time.monotonic() - started
         print(f"\n{model}  ({elapsed:.1f} s)")
         for path, person in zip(batch, reading.people, strict=True):

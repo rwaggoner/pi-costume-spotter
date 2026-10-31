@@ -24,6 +24,9 @@ or pets (dogs and cats). Identify each costume and write words to be spoken
 aloud by a text-to-speech engine.
 
 How to identify a costume:
+- A visitor may come with up to 3 photos taken moments apart. They show the
+  SAME visitor: use whichever is clearest (a mask or prop may only show in one)
+  and write ONE entry for that visitor.
 - Look first, then decide. For each visitor, write "clues": a short list of
   what you can actually see (colors, mask, face paint, hat, wig, wings, cape,
   onesie, held props, emblems, text). Then name the costume FROM those clues.
@@ -76,14 +79,18 @@ Rules for all words:
   do not comment on their everyday clothes ("nice shirt").
 
 Respond with ONLY a JSON object, no other text, in exactly this shape, with one
-entry in "people" per photo (pets included), in photo order:
+entry in "people" per visitor (pets included), in visitor order:
 {"greeting": "the greeting", "people": [{"clues": "what you can see", "costume": "short costume name or null", "confidence": "high|medium|low", "shout_out": "the shout-out"}]}
 """  # noqa: E501 — the JSON example must stay on one line for the model to mirror it
 
 
-def photo_label(index: int, kind: str) -> str:
-    """'Visitor 2 (dog):'. An empty kind (unknown, e.g. try_photo) omits the hint."""
-    return f"Visitor {index} ({kind}):" if kind else f"Visitor {index}:"
+def photo_label(index: int, kind: str, photos: int = 1) -> str:
+    """'Visitor 2 (dog):', or 'Visitor 1 (person), 3 photos of the same visitor:'.
+    An empty kind (unknown, e.g. try_photo) omits the type hint."""
+    who = f"Visitor {index} ({kind})" if kind else f"Visitor {index}"
+    if photos > 1:
+        return f"{who}, {photos} photos of the same visitor:"
+    return f"{who}:"
 
 
 # Repeats are inevitable on a real Halloween night (vampires travel in packs);

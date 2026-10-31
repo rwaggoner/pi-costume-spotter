@@ -19,6 +19,7 @@ costumes.
 | 02-F5 | Choose the snapshot that is easiest to identify: score each frame by box size (closer = more detail) times sharpness (a frame blurred mid-stride hides the details that name a costume), not simply the first or the largest. |
 | 02-F6 | Support multiple simultaneous visitors with independent life cycles. |
 | 02-F7 | **Groups:** visitors who arrive together are published as one `GroupSpotted`. When someone is announced while others in view are about to be, wait for them up to `GROUP_WAIT_SECONDS` (default 1 s); a lone visitor is published immediately (no added latency). Groups are capped at `GROUP_MAX_SIZE` (default 6); bigger crowds become several groups. |
+| 02-F8 | **Several looks per visitor:** besides the best photo (02-F5), keep up to two other distinct moments, the announcement frame and the first sighting (`SNAPSHOTS_PER_VISITOR`, default 3; 1 = best only). All go in the same Claude call, labeled as one visitor, within a per-call budget (`MAX_IMAGES_PER_CALL`, default 8) that gives everyone their best photo first. Storage keeps only the best photo; extra photos never travel over the dashboard socket. |
 
 ## Non-functional requirements
 

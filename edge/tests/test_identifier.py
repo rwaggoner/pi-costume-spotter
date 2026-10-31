@@ -302,3 +302,44 @@ async def test_the_next_call_hears_tonights_costumes():  # 03-F13
     assert "already greeted" not in prompts_sent[0]
     assert "Vampire" in prompts_sent[1] and "fresh" in prompts_sent[1]
     await bus.stop()
+
+
+def test_allocate_images_gives_everyone_their_best_then_shares_extras():  # 02-F8
+    from costume_spotter.vision.identifier import allocate_images
+
+    assert allocate_images([3], 8) == [3]
+    assert allocate_images([3, 3], 8) == [3, 3]
+    assert allocate_images([3, 3, 3, 3], 8) == [2, 2, 2, 2]
+    assert allocate_images([3] * 6, 8) == [2, 2, 1, 1, 1, 1]
+    assert allocate_images([3] * 10, 8) == [1] * 10  # never below one each
+
+
+async def test_extra_photos_go_in_the_same_call_labeled_as_one_visitor():  # 02-F8
+    bus = EventBus()
+    identifier = make_identifier(bus, api_key="sk-test")
+    calls: list = []
+
+    class Recorder:
+        class messages:  # noqa: N801
+            @staticmethod
+            async def create(**kwargs):
+                calls.append(kwargs)
+
+                class Response:
+                    content = [type("Block", (), {"text": (
+                        '{"greeting": "Hi!", "people": [{"costume": "Witch",'
+                        ' "confidence": "high", "shout_out": "Hat!"}]}')})()]
+                return Response()
+
+    identifier._client = Recorder()  # noqa: SLF001
+    _, greetings = await collect(bus)
+    await bus.start()
+    bus.publish(GroupSpotted(group_id="g", visitors=(SpottedVisitor(
+        visitor_id=1, snapshot_jpeg=b"best", box=BoundingBox(0, 0, 1, 1),
+        extra_jpegs=(b"later", b"first")),)))
+    await eventually(lambda: len(greetings) == 1)
+
+    blocks = calls[0]["messages"][0]["content"]
+    assert [b["type"] for b in blocks] == ["text", "image", "image", "image", "text"]
+    assert blocks[0]["text"] == "Visitor 1 (person), 3 photos of the same visitor:"
+    await bus.stop()

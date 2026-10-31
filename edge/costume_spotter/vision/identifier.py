@@ -58,7 +58,7 @@ class CostumeIdentifier:
 
     def __init__(self, bus: EventBus, *, api_key: str | None, model: str,
                  timeout_seconds: float, detector_name: str,
-                 shout_out_max_group: int = 3) -> None:
+                 shout_out_max_group: int = 3, max_images_per_call: int = 8) -> None:
         self._bus = bus
         self._model = model
         self._timeout = timeout_seconds
@@ -66,6 +66,9 @@ class CostumeIdentifier:
         # 04-F9: shout-outs are spoken for groups up to this size; bigger groups
         # get the greeting only, so the porch isn't talking for half a minute.
         self._shout_out_max_group = shout_out_max_group
+        # 02-F8: extra photos per visitor fill this budget after everyone's best
+        # photo, so a big group can't balloon one request (latency, image tokens).
+        self._max_images_per_call = max_images_per_call
         self._pretend = cycle(prompts.PRETEND_IDENTITIES)
         self._pretend_pets = cycle(prompts.PRETEND_PETS)
         self._pretend_group = cycle(prompts.PRETEND_GROUP_GREETINGS)
@@ -112,7 +115,8 @@ class CostumeIdentifier:
         else:
             try:
                 reading = await self._identify_with_claude(
-                    [(v.snapshot_jpeg, v.visitor_type) for v in event.visitors])
+                    [((v.snapshot_jpeg, *v.extra_jpegs), v.visitor_type)
+                     for v in event.visitors])
                 source = "claude"
                 self._recent_costumes.extend(p.costume for p in reading.people if p.costume)
                 self._bus.publish(SystemStatus(component="identifier", ok=True))
@@ -174,23 +178,29 @@ class CostumeIdentifier:
         return GroupReading(greeting,
                             tuple(PersonReading(costume, confidence, "") for _ in range(count)))
 
-    async def _identify_with_claude(self, snapshots: list[tuple[bytes, str]]) -> GroupReading:
+    async def _identify_with_claude(
+            self, snapshots: list[tuple[tuple[bytes, ...], str]]) -> GroupReading:
         """One vision call for the whole group — 03-F2/F9.
 
-        ``snapshots`` is (JPEG, kind) per visitor; kind is the detector's
+        ``snapshots`` is (JPEGs, kind) per visitor: the best photo first, then
+        other moments of the same visitor (02-F8); kind is the detector's
         person/dog/cat, or "" when unknown (try_photo).
         """
+        allowed = allocate_images([len(jpegs) for jpegs, _ in snapshots],
+                                  self._max_images_per_call)
         content: list[dict] = []
-        for index, (jpeg, kind) in enumerate(snapshots, start=1):
-            content.append({"type": "text", "text": prompts.photo_label(index, kind)})
-            content.append({
-                "type": "image",
-                "source": {
-                    "type": "base64",
-                    "media_type": "image/jpeg",
-                    "data": base64.standard_b64encode(jpeg).decode("ascii"),
-                },
-            })
+        for index, ((jpegs, kind), count) in enumerate(zip(snapshots, allowed, strict=True),
+                                                       start=1):
+            content.append({"type": "text", "text": prompts.photo_label(index, kind, count)})
+            for jpeg in jpegs[:count]:
+                content.append({
+                    "type": "image",
+                    "source": {
+                        "type": "base64",
+                        "media_type": "image/jpeg",
+                        "data": base64.standard_b64encode(jpeg).decode("ascii"),
+                    },
+                })
         content.append({"type": "text", "text": prompts.user_prompt(
             len(snapshots), list(self._recent_costumes))})
 
@@ -259,6 +269,27 @@ class CostumeIdentifier:
         if not greeting:
             raise ValueError("model returned an empty greeting")
         return GroupReading(greeting, tuple(people))
+
+
+def allocate_images(available: list[int], budget: int) -> list[int]:
+    """How many photos to send per visitor (02-F8).
+
+    Everyone gets their best photo, even past the budget (identification needs
+    at least one per visitor). Leftover budget goes to extra moments, one round
+    at a time in visitor order, so a pair gets 3+3 but a group of six gets 1-2 each.
+    """
+    counts = [1 if n else 0 for n in available]
+    left = budget - sum(counts)
+    while left > 0:
+        progressed = False
+        for i, n in enumerate(available):
+            if left > 0 and counts[i] < n:
+                counts[i] += 1
+                left -= 1
+                progressed = True
+        if not progressed:
+            break
+    return counts
 
 
 def _person(raw: dict) -> PersonReading:

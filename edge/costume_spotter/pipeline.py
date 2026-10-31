@@ -33,6 +33,9 @@ from costume_spotter.tracking.tracker import NewVisitor
 # 1024 keeps the small details that name a costume (logos, masks, face paint);
 # 512 was faster to upload but threw those away.
 SNAPSHOT_MAX_SIDE = 1024
+# The extra moments (02-F8) are second looks, not the main evidence: smaller
+# keeps the request (and its upload and image tokens) lean.
+EXTRA_MAX_SIDE = 768
 
 logger = logging.getLogger(__name__)
 
@@ -135,6 +138,8 @@ class FramePipeline:
         members = []
         for visitor in group:
             snapshot_jpeg = await asyncio.to_thread(_encode_snapshot, visitor.snapshot)
+            extra_jpegs = tuple([await asyncio.to_thread(_encode_snapshot, crop, EXTRA_MAX_SIDE)
+                                 for crop in visitor.extra_snapshots])
             logger.info("new %s #%d (box %dx%d, group %s of %d)", visitor.visitor_type,
                         visitor.visitor_id, visitor.box.width, visitor.box.height,
                         group_id, len(group))
@@ -147,10 +152,11 @@ class FramePipeline:
             ))
             members.append(SpottedVisitor(visitor_id=visitor.visitor_id,
                                           snapshot_jpeg=snapshot_jpeg, box=visitor.box,
-                                          visitor_type=visitor.visitor_type))
+                                          visitor_type=visitor.visitor_type,
+                                          extra_jpegs=extra_jpegs))
         self._bus.publish(GroupSpotted(group_id=group_id, visitors=tuple(members)))
 
 
-def _encode_snapshot(crop) -> bytes:
-    enhanced = imaging.enhance_for_identification(imaging.shrink(crop, SNAPSHOT_MAX_SIDE))
+def _encode_snapshot(crop, max_side: int = SNAPSHOT_MAX_SIDE) -> bytes:
+    enhanced = imaging.enhance_for_identification(imaging.shrink(crop, max_side))
     return imaging.encode_jpeg(enhanced, 90)

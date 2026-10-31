@@ -118,6 +118,7 @@ def build_application(settings: Settings) -> FastAPI:
         iou_threshold=settings.tracker_iou_threshold,
         min_hits=settings.tracker_min_hits,
         max_misses=settings.tracker_max_misses,
+        max_snapshots=settings.snapshots_per_visitor,
         retire_seconds=settings.tracker_retire_seconds,
     )
     grouper = GroupAssembler(wait_seconds=settings.group_wait_seconds,
@@ -134,7 +135,8 @@ def build_application(settings: Settings) -> FastAPI:
                                    model=settings.claude_model,
                                    timeout_seconds=settings.identify_timeout_seconds,
                                    detector_name=detector.name,
-                                   shout_out_max_group=settings.shout_out_max_group)
+                                   shout_out_max_group=settings.shout_out_max_group,
+                                   max_images_per_call=settings.max_images_per_call)
     tts_engine = build_tts_engine(settings)
     audio_filter = None
     if settings.spooky_voice:

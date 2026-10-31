@@ -105,3 +105,14 @@ def test_no_event_field_shadows_the_wire_kind():
     wire = ev.NewVisitorSpotted(visitor_id=1, snapshot_jpeg=b"x", box=BoundingBox(0, 0, 1, 1),
                                 visitor_type="dog").as_wire_dict()
     assert wire["kind"] == "NewVisitorSpotted" and wire["visitor_type"] == "dog"
+
+
+def test_extra_photos_never_ride_the_event_socket():  # 02-F8
+    from costume_spotter.events import events as ev
+    from costume_spotter.events.events import BoundingBox
+
+    group = ev.GroupSpotted(group_id="g", visitors=(ev.SpottedVisitor(
+        visitor_id=1, snapshot_jpeg=b"x", box=BoundingBox(0, 0, 1, 1),
+        extra_jpegs=(b"y", b"z")),))
+    wire = group.as_wire_dict()
+    assert set(wire["visitors"][0]) == {"visitor_id", "box", "visitor_type"}
