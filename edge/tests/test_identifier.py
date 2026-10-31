@@ -272,3 +272,33 @@ def test_prompt_forbids_no_costume_when_costume_pieces_are_visible():  # 03-F12
     assert '"clues"' in text  # clues come before the costume in the JSON shape
     assert text.index('"clues"') < text.index('"costume": "short costume name or null"')
     assert "ONLY for everyday clothes" in text and "MUST name a costume" in text
+
+
+async def test_the_next_call_hears_tonights_costumes():  # 03-F13
+    bus = EventBus()
+    identifier = make_identifier(bus, api_key="sk-test")
+    prompts_sent: list[str] = []
+
+    class Recorder:
+        class messages:  # noqa: N801
+            @staticmethod
+            async def create(**kwargs):
+                prompts_sent.append(kwargs["messages"][0]["content"][-1]["text"])
+
+                class Response:
+                    content = [type("Block", (), {"text": (
+                        '{"greeting": "Hi!", "people": [{"costume": "Vampire",'
+                        ' "confidence": "high", "shout_out": "Fangs!"}]}')})()]
+                return Response()
+
+    identifier._client = Recorder()  # noqa: SLF001
+    _, greetings = await collect(bus)
+    await bus.start()
+    bus.publish(make_group(1))
+    await eventually(lambda: len(greetings) == 1)
+    bus.publish(make_group(1))
+    await eventually(lambda: len(greetings) == 2)
+
+    assert "already greeted" not in prompts_sent[0]
+    assert "Vampire" in prompts_sent[1] and "fresh" in prompts_sent[1]
+    await bus.stop()

@@ -18,6 +18,7 @@ import json
 import logging
 import re
 import uuid
+from collections import deque
 from dataclasses import dataclass
 from itertools import cycle
 
@@ -68,6 +69,9 @@ class CostumeIdentifier:
         self._pretend = cycle(prompts.PRETEND_IDENTITIES)
         self._pretend_pets = cycle(prompts.PRETEND_PETS)
         self._pretend_group = cycle(prompts.PRETEND_GROUP_GREETINGS)
+        # Tonight's greeted costumes, session-scoped, so repeat costumes get
+        # varied jokes (03-F13). Bounded: old entries age out naturally.
+        self._recent_costumes: deque[str] = deque(maxlen=20)
 
         if api_key:
             # Fail fast on an unusable key (same philosophy as 01-F6). Keys ride
@@ -110,6 +114,7 @@ class CostumeIdentifier:
                 reading = await self._identify_with_claude(
                     [(v.snapshot_jpeg, v.visitor_type) for v in event.visitors])
                 source = "claude"
+                self._recent_costumes.extend(p.costume for p in reading.people if p.costume)
                 self._bus.publish(SystemStatus(component="identifier", ok=True))
             except Exception as exc:
                 # Whatever went wrong (network, 5xx after retries, bad JSON), the
@@ -186,7 +191,8 @@ class CostumeIdentifier:
                     "data": base64.standard_b64encode(jpeg).decode("ascii"),
                 },
             })
-        content.append({"type": "text", "text": prompts.user_prompt(len(snapshots))})
+        content.append({"type": "text", "text": prompts.user_prompt(
+            len(snapshots), list(self._recent_costumes))})
 
         last_error: Exception | None = None
         for attempt in range(_MAX_RETRIES + 1):

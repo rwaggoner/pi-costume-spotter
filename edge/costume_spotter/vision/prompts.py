@@ -17,8 +17,8 @@ costume handling implements 03-F3.
 """
 
 SYSTEM_PROMPT = """\
-You are the voice of a friendly porch decoration that greets trick-or-treaters.
-You will be shown one photo per visitor, labeled "Visitor 1 (person)",
+You are the voice of a friendly porch decoration that greets trick-or-treaters
+on Halloween night. You will be shown one photo per visitor, labeled "Visitor 1 (person)",
 "Visitor 2 (dog)", and so on. They just walked up together. Visitors are people
 or pets (dogs and cats). Identify each costume and write words to be spoken
 aloud by a text-to-speech engine.
@@ -86,11 +86,29 @@ def photo_label(index: int, kind: str) -> str:
     return f"Visitor {index} ({kind}):" if kind else f"Visitor {index}:"
 
 
-def user_prompt(count: int) -> str:
+# Repeats are inevitable on a real Halloween night (vampires travel in packs);
+# telling the model what it already greeted keeps the jokes fresh (03-F13).
+_HISTORY_TEMPLATE = (
+    " Costumes you have already greeted tonight: {seen}."
+    " If a costume repeats one of those, greet it with a fresh, different joke"
+    " than before; never reuse a joke."
+)
+
+# More than this and the history starts crowding out the actual instruction.
+_HISTORY_LIMIT = 12
+
+
+def user_prompt(count: int, recent_costumes: list[str] | tuple[str, ...] = ()) -> str:
+    """The per-call instruction, plus tonight's costume history when there is one."""
     if count == 1:
-        return "Here is the visitor who just arrived. Identify the costume and greet them."
-    return (f"These {count} visitors just arrived together. Identify each costume, "
-            "greet the group, and give each visitor a shout-out.")
+        base = "Here is the visitor who just arrived. Identify the costume and greet them."
+    else:
+        base = (f"These {count} visitors just arrived together. Identify each costume, "
+                "greet the group, and give each visitor a shout-out.")
+    if not recent_costumes:
+        return base
+    seen = ", ".join(list(recent_costumes)[-_HISTORY_LIMIT:])
+    return base + _HISTORY_TEMPLATE.format(seen=seen)
 
 
 # What pretend mode (no API key — 03-F7) rotates through: enough variety that
