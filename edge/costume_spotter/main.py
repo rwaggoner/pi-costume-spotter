@@ -131,6 +131,7 @@ def build_application(settings: Settings) -> FastAPI:
         max_misses=settings.tracker_max_misses,
         max_snapshots=settings.snapshots_per_visitor,
         retire_seconds=settings.tracker_retire_seconds,
+        regreet_seconds=settings.regreet_cooldown_seconds,
     )
     grouper = GroupAssembler(wait_seconds=settings.group_wait_seconds,
                              max_size=settings.group_max_size)

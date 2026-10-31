@@ -18,8 +18,10 @@ import json
 import logging
 import random
 import re
+import time
 import uuid
 from collections import deque
+from collections.abc import Callable
 from dataclasses import dataclass
 from itertools import cycle
 
@@ -38,6 +40,9 @@ logger = logging.getLogger(__name__)
 _MAX_RETRIES = 2  # 03-F8: transient failures get 2 retries...
 _BACKOFF_SECONDS = (0.5, 1.0)  # ...quickly: the visitor is standing right there
 _VALID_CONFIDENCE = {"high", "medium", "low"}
+# The greeting is the first field of the JSON, so with a streamed reply it is
+# complete long before the per-visitor clues and shout-outs are (03-F15).
+_GREETING = re.compile(r'"greeting"\s*:\s*"((?:[^"\\]|\\.)*)"')
 
 
 @dataclass(frozen=True)
@@ -116,6 +121,19 @@ class CostumeIdentifier:
     async def on_group(self, event: BaseEvent) -> None:
         assert isinstance(event, GroupSpotted)
         count = len(event.visitors)
+        started = time.monotonic()
+        # Minted up front so an early greeting (03-F15) can already name them.
+        sighting_ids = tuple(str(uuid.uuid4()) for _ in event.visitors)
+        greeted_early = False
+
+        def speak_greeting_now(greeting: str) -> None:
+            nonlocal greeted_early
+            greeted_early = True
+            logger.info("greeting ready %.1f s after the group was spotted",
+                        time.monotonic() - started)
+            self._bus.publish(GreetingReady(group_id=event.group_id, text=greeting,
+                                            sighting_ids=sighting_ids))
+
         if self._client is None:
             reading = self._pretend_reading([v.visitor_type for v in event.visitors])
             source = "pretend"
@@ -123,7 +141,7 @@ class CostumeIdentifier:
             try:
                 reading = await self._identify_with_claude(
                     [((v.snapshot_jpeg, *v.extra_jpegs), v.visitor_type)
-                     for v in event.visitors])
+                     for v in event.visitors], on_greeting=speak_greeting_now)
                 source = "claude"
                 self._recent_costumes.extend(p.costume for p in reading.people if p.costume)
                 self._bus.publish(SystemStatus(component="identifier", ok=True))
@@ -133,11 +151,11 @@ class CostumeIdentifier:
                 logger.warning("identification failed (%s); using fallback identity", exc)
                 reading, source = self._fallback_reading(count), "fallback"
                 self._bus.publish(SystemStatus(component="identifier", ok=False, detail=str(exc)))
+        logger.info("identified %d visitor(s) %.1f s after they were spotted", count,
+                    time.monotonic() - started)
 
-        sighting_ids = []
-        for visitor, person in zip(event.visitors, reading.people, strict=True):
-            sighting_id = str(uuid.uuid4())
-            sighting_ids.append(sighting_id)
+        for sighting_id, visitor, person in zip(sighting_ids, event.visitors, reading.people,
+                                                strict=True):
             self._bus.publish(CostumeIdentified(
                 sighting_id=sighting_id,
                 visitor_id=visitor.visitor_id,
@@ -155,17 +173,29 @@ class CostumeIdentifier:
                 group_size=count,
                 visitor_type=visitor.visitor_type,
             ))
-        self._bus.publish(GreetingReady(group_id=event.group_id,
-                                        text=self.spoken_text(reading),
-                                        sighting_ids=tuple(sighting_ids)))
+        if greeted_early:
+            # The greeting is already being spoken: follow it with the shout-outs.
+            rest = self.shout_outs_text(reading)
+            if rest and source == "claude":
+                self._bus.publish(GreetingReady(group_id=event.group_id, text=rest,
+                                                sighting_ids=sighting_ids))
+        else:
+            self._bus.publish(GreetingReady(group_id=event.group_id,
+                                            text=self.spoken_text(reading),
+                                            sighting_ids=sighting_ids))
 
     def spoken_text(self, reading: GroupReading) -> str:
         """What the speaker says (04-F9): the greeting, then shout-outs for small groups."""
+        return " ".join(part for part in (reading.greeting, self.shout_outs_text(reading))
+                        if part)
+
+    def shout_outs_text(self, reading: GroupReading) -> str:
+        """The shout-outs spoken after the greeting: only for groups of 2 up to
+        SHOUT_OUT_MAX_GROUP, so a big group isn't kept waiting (04-F9)."""
         count = len(reading.people)
         if count == 1 or count > self._shout_out_max_group:
-            return reading.greeting
-        shout_outs = [p.shout_out for p in reading.people if p.shout_out]
-        return " ".join([reading.greeting, *shout_outs])
+            return ""
+        return " ".join(p.shout_out for p in reading.people if p.shout_out)
 
     # -- the three sources of words ---------------------------------------------
 
@@ -186,12 +216,17 @@ class CostumeIdentifier:
                             tuple(PersonReading(costume, confidence, "") for _ in range(count)))
 
     async def _identify_with_claude(
-            self, snapshots: list[tuple[tuple[bytes, ...], str]]) -> GroupReading:
+            self, snapshots: list[tuple[tuple[bytes, ...], str]],
+            on_greeting: Callable[[str], None] | None = None) -> GroupReading:
         """One vision call for the whole group — 03-F2/F9.
 
         ``snapshots`` is (JPEGs, kind) per visitor: the best photo first, then
         other moments of the same visitor (02-F8); kind is the detector's
         person/dog/cat, or "" when unknown (try_photo).
+
+        ``on_greeting`` (03-F15) is called with the greeting as soon as it has
+        streamed in, before the rest of the reply. Once it has been called the
+        call is never retried: the porch has already started talking.
         """
         allowed = allocate_images([len(jpegs) for jpegs, _ in snapshots],
                                   self._max_images_per_call)
@@ -212,23 +247,32 @@ class CostumeIdentifier:
         content.append({"type": "text", "text": prompts.user_prompt(
             len(snapshots), list(self._recent_costumes), sarcastic=sarcastic)})
 
+        request = {
+            "model": self._model,
+            # Greeting ~40 tokens, then ~75 per visitor (clues + age + costume
+            # + shout-out), with headroom.
+            "max_tokens": 150 + 110 * len(snapshots),
+            # Cached (03-F15): the system prompt is the same on every call, so
+            # visitors within 5 minutes of each other skip re-reading it.
+            "system": [{"type": "text", "text": prompts.SYSTEM_PROMPT,
+                        "cache_control": {"type": "ephemeral"}}],
+            "messages": [{"role": "user", "content": content}],
+        }
+        greeted = [False]
+
+        def greeting_streamed(greeting: str) -> None:
+            greeted[0] = True
+            if on_greeting is not None:
+                on_greeting(greeting)
+
         last_error: Exception | None = None
         for attempt in range(_MAX_RETRIES + 1):
             if attempt:
                 await asyncio.sleep(_BACKOFF_SECONDS[attempt - 1])
             try:
-                response = await asyncio.wait_for(
-                    self._client.messages.create(
-                        model=self._model,
-                        # Greeting ~40 tokens, then ~70 per visitor (clues + costume
-                        # + shout-out), with headroom.
-                        max_tokens=150 + 110 * len(snapshots),
-                        system=prompts.SYSTEM_PROMPT,
-                        messages=[{"role": "user", "content": content}],
-                    ),
-                    timeout=self._timeout,
-                )
-                reading = self._parse(response.content[0].text, len(snapshots))
+                text = await asyncio.wait_for(self._complete(request, greeting_streamed),
+                                              timeout=self._timeout)
+                reading = self._parse(text, len(snapshots))
                 for index, person in enumerate(reading.people, start=1):
                     logger.info("visitor %d (%s%s): clues=%r -> costume=%r (%s)", index,
                                 person.age or "?", ", sarcastic" if sarcastic else "",
@@ -240,9 +284,29 @@ class CostumeIdentifier:
                 # check). Surface immediately → fallback identity (03-F6).
                 raise
             except Exception as exc:  # noqa: BLE001 — every other failure retries the same way
+                if greeted[0]:
+                    raise  # already speaking: a retry would greet them twice
                 last_error = exc
                 logger.info("claude attempt %d/%d failed: %s", attempt + 1, _MAX_RETRIES + 1, exc)
         raise last_error  # type: ignore[misc]  # loop ran at least once
+
+    async def _complete(self, request: dict, on_greeting: Callable[[str], None]) -> str:
+        """The model's whole reply. Streamed when the client supports it, so
+        ``on_greeting`` fires as soon as the greeting is complete (03-F15)."""
+        messages = self._client.messages
+        if not hasattr(messages, "stream"):  # test stubs, older SDKs
+            response = await messages.create(**request)
+            return response.content[0].text
+        text, sent = "", False
+        async with messages.stream(**request) as stream:
+            async for chunk in stream.text_stream:
+                text += chunk
+                if not sent and (found := _GREETING.search(text)):
+                    greeting = json.loads(f'"{found.group(1)}"').strip()
+                    if greeting:
+                        sent = True
+                        on_greeting(greeting)
+        return text
 
     @staticmethod
     def _parse(text: str, count: int = 1) -> GroupReading:

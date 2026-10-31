@@ -13,12 +13,22 @@ Design for testability (02-N3): this class is synchronous, does no I/O, and take
 ``now`` as a parameter — tests drive it with scripted boxes and a fake clock.
 """
 
+import logging
 from dataclasses import dataclass, field
 
 import numpy as np
 
 from costume_spotter import imaging
 from costume_spotter.events.events import BoundingBox, Detection
+
+logger = logging.getLogger(__name__)
+
+# Re-greet guard (02-F9). A "new" visitor is really someone already greeted
+# when they look alike (colour signature) and either reappear close to where
+# they were lost, soon after, or look very alike within the cooldown.
+_SOON_SECONDS = 5.0
+_ALIKE_NEARBY = 0.55  # histogram intersection, 0-1
+_ALIKE_ANYWHERE = 0.85
 
 
 @dataclass
@@ -43,6 +53,9 @@ class _TrackedVisitor:
     best_frame: int = 0  # which sighting produced best_crop, for de-duplication
     first_crop: np.ndarray | None = None
     frames_seen: int = 0
+    first_seen: float = 0.0
+    first_box: BoundingBox | None = None
+    signature: np.ndarray | None = None  # colour signature, set when announced (02-F9)
 
 
 @dataclass(frozen=True)
@@ -67,8 +80,14 @@ class VisitorTracker:
     max_misses: int = 2         # 02-F3: missed frames tolerated while building those hits
     max_snapshots: int = 3      # 02-F8: photos per visitor (best + other moments); 1 = best only
     retire_seconds: float = 30.0  # 02-F4: absence before the visitor is forgotten
+    # 02-F9: someone already greeted who "reappears" within this many seconds
+    # (lost behind a door, bent over the candy bowl, detector blinked) is
+    # recognised and not greeted again. 0 = off.
+    regreet_seconds: float = 60.0
 
     _visitors: dict[int, _TrackedVisitor] = field(default_factory=dict)
+    # Greeted visitors that were retired, kept for the re-greet guard (02-F9).
+    _greeted: list[_TrackedVisitor] = field(default_factory=list)
     _next_id: int = 1  # session-scoped, resets on restart — deliberate (05-N2)
 
     def update(self, detections: list[Detection], frame: np.ndarray,
@@ -99,7 +118,12 @@ class VisitorTracker:
             matched_visitors.add(visitor.visitor_id)
             self._advance(visitor, det, frame, now)
             if self._just_became_announceable(visitor):
-                announced.append(self._announce(visitor, det, frame))
+                previous = self._seen_before(visitor, det, frame, now, matched_visitors)
+                if previous is not None:
+                    self._merge(previous, visitor, det, now)
+                    matched_visitors.add(previous.visitor_id)
+                else:
+                    announced.append(self._announce(visitor, det, frame))
 
         # Stability with tolerance (02-F3): a candidate may miss up to max_misses
         # frames in a row and keep its count; one more and it starts over. A
@@ -116,7 +140,8 @@ class VisitorTracker:
         # Anything left unmatched starts life as a 1-hit candidate. A YOLO
         # flicker on a shadow dies here quietly, min_hits frames short of an event.
         for det in unmatched:
-            v = _TrackedVisitor(self._next_id, det.box, now, label=det.label)
+            v = _TrackedVisitor(self._next_id, det.box, now, label=det.label,
+                                first_seen=now, first_box=det.box)
             self._remember_best_crop(v, det.box, frame)
             self._visitors[self._next_id] = v
             self._next_id += 1
@@ -151,6 +176,43 @@ class VisitorTracker:
             v.best_crop = crop.copy()
             v.best_frame = v.frames_seen
 
+    def _seen_before(self, candidate: _TrackedVisitor, det: Detection, frame: np.ndarray,
+                     now: float, matched: set[int]) -> "_TrackedVisitor | None":
+        """An already-greeted visitor this candidate is probably the same person
+        as (02-F9), or None. Only greeted visitors NOT seen in this frame count:
+        two lookalike vampires standing side by side are two visitors."""
+        if self.regreet_seconds <= 0:
+            return None
+        signature = _signature(frame, det.box)
+        best, best_alike = None, 0.0
+        for old in [*self._visitors.values(), *self._greeted]:
+            if (not old.announced or old.label != candidate.label
+                    or old.visitor_id in matched or old.visitor_id == candidate.visitor_id
+                    or old.signature is None or now - old.last_seen > self.regreet_seconds):
+                continue
+            alike = float(np.minimum(signature, old.signature).sum())
+            gone = candidate.first_seen - old.last_seen
+            nearby = _close(old.box, candidate.first_box or det.box)
+            if (alike >= _ALIKE_ANYWHERE
+                    or (alike >= _ALIKE_NEARBY and nearby and gone <= _SOON_SECONDS)):
+                if alike > best_alike:
+                    best, best_alike = old, alike
+        if best is not None:
+            gone = max(0.0, candidate.first_seen - best.last_seen)
+            logger.info("%s #%d looks like #%d again (%.2f alike, gone %.1f s) - not "
+                        "greeting twice", candidate.label, candidate.visitor_id,
+                        best.visitor_id, best_alike, gone)
+        return best
+
+    def _merge(self, old: _TrackedVisitor, candidate: _TrackedVisitor, det: Detection,
+               now: float) -> None:
+        """The candidate was the greeted visitor all along: keep the old identity."""
+        del self._visitors[candidate.visitor_id]
+        if old in self._greeted:
+            self._greeted.remove(old)
+        old.box, old.last_seen, old.misses = det.box, now, 0
+        self._visitors[old.visitor_id] = old
+
     def _just_became_announceable(self, v: _TrackedVisitor) -> bool:
         return not v.announced and v.consecutive_hits >= self.min_hits
 
@@ -159,6 +221,7 @@ class VisitorTracker:
         moments: the announcement frame and the first sighting (02-F8). One
         blurred or half-turned frame no longer sinks the identification."""
         v.announced = True
+        v.signature = _signature(frame, det.box)
         assert v.best_crop is not None and v.first_crop is not None  # set at first sighting
         # De-duplicate by sighting number: the best crop may BE the latest or first.
         by_frame: dict[int, np.ndarray] = {v.best_frame: v.best_crop}
@@ -176,7 +239,11 @@ class VisitorTracker:
         stale = [vid for vid, v in self._visitors.items()
                  if now - v.last_seen > self.retire_seconds]
         for vid in stale:
-            del self._visitors[vid]
+            visitor = self._visitors.pop(vid)
+            if visitor.announced and self.regreet_seconds > self.retire_seconds:
+                self._greeted.append(visitor)  # remembered a while longer (02-F9)
+        self._greeted = [v for v in self._greeted
+                         if now - v.last_seen <= self.regreet_seconds]
 
     def pending_count(self) -> int:
         """People in view right now who are on their way to being announced.
@@ -193,3 +260,23 @@ class VisitorTracker:
     def active_boxes(self) -> list[BoundingBox]:
         """Current visitor boxes, for anyone who wants a system snapshot (e.g. debugging)."""
         return [v.box for v in self._visitors.values()]
+
+
+def _signature(frame: np.ndarray, box: BoundingBox) -> np.ndarray:
+    """A visitor's colour signature: a 64-bin RGB histogram (sums to 1) of the
+    middle of their box, which is mostly costume rather than background."""
+    crop = imaging.crop_box(frame, box, pad_fraction=0.0)
+    h, w = crop.shape[:2]
+    core = crop[int(h * 0.1):max(int(h * 0.9), 1), int(w * 0.2):max(int(w * 0.8), 1)]
+    if core.size == 0:
+        core = crop
+    bins = (core[..., :3].reshape(-1, 3) // 64).astype(np.int32)
+    hist = np.bincount(bins[:, 0] * 16 + bins[:, 1] * 4 + bins[:, 2], minlength=64)
+    return hist / max(hist.sum(), 1)
+
+
+def _close(a: BoundingBox, b: BoundingBox) -> bool:
+    """Centres within one body-height of each other."""
+    ax, ay = a.x + a.width / 2, a.y + a.height / 2
+    bx, by = b.x + b.width / 2, b.y + b.height / 2
+    return ((ax - bx) ** 2 + (ay - by) ** 2) ** 0.5 <= max(a.height, b.height)

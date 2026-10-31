@@ -59,13 +59,15 @@ class SightingRepository:
             ))
             session.commit()
 
-    def mark_spoken(self, sighting_id: str) -> None:
-        """Speech completes after the row exists, so 'spoken' is a follow-up update."""
+    def mark_spoken(self, sighting_id: str) -> bool:
+        """'spoken' is a follow-up update; False when the row doesn't exist (yet)."""
         with self._session_factory() as session:
             row = session.get(SightingRow, sighting_id)
-            if row is not None:
-                row.spoken = True
-                session.commit()
+            if row is None:
+                return False
+            row.spoken = True
+            session.commit()
+            return True
 
     def prune_older_than(self, days: int) -> int:
         """Delete rows past the retention window (05-F3); returns count for the log.
