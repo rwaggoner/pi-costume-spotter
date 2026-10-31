@@ -343,3 +343,47 @@ async def test_extra_photos_go_in_the_same_call_labeled_as_one_visitor():  # 02-
     assert [b["type"] for b in blocks] == ["text", "image", "image", "image", "text"]
     assert blocks[0]["text"] == "Visitor 1 (person), 3 photos of the same visitor:"
     await bus.stop()
+
+
+# -- sarcasm switch + age band (03-F14) ----------------------------------------
+
+async def test_sarcasm_rate_decides_which_calls_are_sarcastic():
+    import random
+
+    bus = EventBus()
+    prompts_sent: list[str] = []
+
+    class Recorder:
+        class messages:  # noqa: N801
+            @staticmethod
+            async def create(**kwargs):
+                prompts_sent.append(kwargs["messages"][0]["content"][-1]["text"])
+
+                class Response:
+                    content = [type("Block", (), {"text": (
+                        '{"greeting": "Hi!", "people": [{"clues": "hoodie, pillowcase",'
+                        ' "age": "Teen or Adult", "costume": null, "confidence": "high",'
+                        ' "shout_out": "Bold strategy."}]}')})()]
+                return Response()
+
+    always = CostumeIdentifier(bus, api_key="sk-test", model="x", timeout_seconds=1,
+                               detector_name="mock", sarcasm_rate=1.0)
+    always._client = Recorder()  # noqa: SLF001
+    never = CostumeIdentifier(bus, api_key="sk-test", model="x", timeout_seconds=1,
+                              detector_name="mock", sarcasm_rate=0.0)
+    never._client = Recorder()  # noqa: SLF001
+    some = CostumeIdentifier(bus, api_key="sk-test", model="x", timeout_seconds=1,
+                             detector_name="mock", sarcasm_rate=0.4, rng=random.Random(1))
+    some._client = Recorder()  # noqa: SLF001
+
+    photo = [((b"\xff\xd8fake",), "person")]
+    reading = await always._identify_with_claude(photo)  # noqa: SLF001
+    await never._identify_with_claude(photo)  # noqa: SLF001
+    assert "SARCASTIC" in prompts_sent[0] and "SARCASTIC" not in prompts_sent[1]
+    assert reading.people[0].age == "teen or adult" and reading.people[0].costume is None
+
+    prompts_sent.clear()
+    for _ in range(50):
+        await some._identify_with_claude(photo)  # noqa: SLF001
+    share = sum("SARCASTIC" in p for p in prompts_sent) / 50
+    assert 0.2 < share < 0.6  # "mixed in", not every time and not never

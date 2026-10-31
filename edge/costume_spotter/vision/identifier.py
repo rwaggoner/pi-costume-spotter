@@ -16,6 +16,7 @@ import asyncio
 import base64
 import json
 import logging
+import random
 import re
 import uuid
 from collections import deque
@@ -45,6 +46,7 @@ class PersonReading:
     confidence: str
     shout_out: str
     clues: str = ""  # what Claude saw before deciding (03-F12) — logged, for tuning
+    age: str = ""  # little kid | big kid | teen or adult | pet (03-F14) — logged only
 
 
 @dataclass(frozen=True)
@@ -58,7 +60,8 @@ class CostumeIdentifier:
 
     def __init__(self, bus: EventBus, *, api_key: str | None, model: str,
                  timeout_seconds: float, detector_name: str,
-                 shout_out_max_group: int = 3, max_images_per_call: int = 8) -> None:
+                 shout_out_max_group: int = 3, max_images_per_call: int = 8,
+                 sarcasm_rate: float = 0.4, rng: random.Random | None = None) -> None:
         self._bus = bus
         self._model = model
         self._timeout = timeout_seconds
@@ -75,6 +78,10 @@ class CostumeIdentifier:
         # Tonight's greeted costumes, session-scoped, so repeat costumes get
         # varied jokes (03-F13). Bounded: old entries age out naturally.
         self._recent_costumes: deque[str] = deque(maxlen=20)
+        # 03-F14: the share of calls where older visitors get dry sarcasm. Rolled
+        # here, not left to the model, which can't do "sometimes" reliably.
+        self._sarcasm_rate = min(max(sarcasm_rate, 0.0), 1.0)
+        self._rng = rng or random.Random()
 
         if api_key:
             # Fail fast on an unusable key (same philosophy as 01-F6). Keys ride
@@ -201,8 +208,9 @@ class CostumeIdentifier:
                         "data": base64.standard_b64encode(jpeg).decode("ascii"),
                     },
                 })
+        sarcastic = self._rng.random() < self._sarcasm_rate
         content.append({"type": "text", "text": prompts.user_prompt(
-            len(snapshots), list(self._recent_costumes))})
+            len(snapshots), list(self._recent_costumes), sarcastic=sarcastic)})
 
         last_error: Exception | None = None
         for attempt in range(_MAX_RETRIES + 1):
@@ -222,8 +230,9 @@ class CostumeIdentifier:
                 )
                 reading = self._parse(response.content[0].text, len(snapshots))
                 for index, person in enumerate(reading.people, start=1):
-                    logger.info("visitor %d: clues=%r -> costume=%r (%s)", index, person.clues,
-                                person.costume, person.confidence)
+                    logger.info("visitor %d (%s%s): clues=%r -> costume=%r (%s)", index,
+                                person.age or "?", ", sarcastic" if sarcastic else "",
+                                person.clues, person.costume, person.confidence)
                 return reading
             except UnicodeEncodeError:
                 # Encoding failures happen before any network I/O and can never
@@ -300,4 +309,5 @@ def _person(raw: dict) -> PersonReading:
     if confidence not in _VALID_CONFIDENCE:
         confidence = "low"
     return PersonReading(costume, confidence, str(raw.get("shout_out") or "").strip(),
-                         clues=str(raw.get("clues") or "").strip()[:300])
+                         clues=str(raw.get("clues") or "").strip()[:300],
+                         age=str(raw.get("age") or "").strip().lower()[:20])

@@ -53,7 +53,8 @@ async def _run(paths: list[Path], group: bool, model: str, settings: Settings) -
     identifier = CostumeIdentifier(EventBus(), api_key=settings.anthropic_api_key, model=model,
                                    timeout_seconds=max(settings.identify_timeout_seconds, 30),
                                    detector_name="try_photo",
-                                   shout_out_max_group=settings.shout_out_max_group)
+                                   shout_out_max_group=settings.shout_out_max_group,
+                                   sarcasm_rate=settings.sarcasm_rate)
     batches = [paths] if group else [[p] for p in paths]
     for batch in batches:
         started = time.monotonic()
@@ -64,7 +65,8 @@ async def _run(paths: list[Path], group: bool, model: str, settings: Settings) -
         print(f"\n{model}  ({elapsed:.1f} s)")
         for path, person in zip(batch, reading.people, strict=True):
             costume = person.costume or "(no costume)"
-            print(f"  {path.name}: {costume}  [{person.confidence}]"
+            age = f", {person.age}" if person.age else ""
+            print(f"  {path.name}: {costume}  [{person.confidence}{age}]"
                   + (f"  shout-out: {person.shout_out}" if len(batch) > 1 else ""))
         print(f"  would say: \"{identifier.spoken_text(reading)}\"")
 
