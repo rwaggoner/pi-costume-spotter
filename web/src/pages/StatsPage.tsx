@@ -61,7 +61,7 @@ function Tiles({ stats }: { stats: NightStats }) {
       <Tile label="No costume" value={t.no_costume} note={`${percent(t.no_costume, t.people)} of people`} />
       <Tile label="Pets" value={t.pet} note={`${t.dogs} dogs, ${t.cats} cats`} />
       <Tile label="Different costumes" value={t.unique_costumes} />
-      <Tile label="Groups" value={t.groups} note={`${t.average_group} visitors on average, up to ${t.largest_group}`} />
+      <Tile label="Groups" value={t.groups} note={`${t.average_group} on average, up to ${t.largest_group}`} />
       <Tile label="Busiest" value={t.busiest ? clock(t.busiest.start) : "—"} note={busiest} />
       <Tile label="Confident IDs" value={percent(stats.confidence.high, t.costume)}
             note={`${stats.confidence.medium} medium, ${stats.confidence.low} low guesses`} />
