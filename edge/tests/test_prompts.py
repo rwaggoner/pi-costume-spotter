@@ -24,3 +24,35 @@ def test_history_is_capped_to_the_most_recent():
 
 def test_system_prompt_sets_the_halloween_scene():
     assert "Halloween night" in prompts.SYSTEM_PROMPT
+
+
+# -- who is visiting: age bands, no-costume specifics, sarcasm (03-F14) ------------
+
+def test_sarcasm_is_switched_on_per_call_only():
+    assert "SARCASTIC" not in prompts.user_prompt(1)
+    on = prompts.user_prompt(2, ["witch"], sarcastic=True)
+    assert on.startswith(prompts.user_prompt(2, ["witch"]))  # history kept, switch appended
+    assert "SARCASTIC" in on and "Little kids" in on
+
+
+def test_prompt_asks_for_an_age_band_and_guesses_younger():
+    text = prompts.SYSTEM_PROMPT
+    assert '"age": "little kid|big kid|teen or adult|pet"' in text
+    assert "pick the YOUNGER band" in text
+    assert "never said out loud" in text
+
+
+def test_no_costume_rules_tease_only_teens_and_adults():
+    text = prompts.SYSTEM_PROMPT
+    no_costume = text[text.index("No costume:"):text.index("Sarcasm (only")]
+    assert "ONE specific, friendly detail" in no_costume
+    assert '"little kid" or "big kid": warm' in no_costume
+    assert '"teen or adult": tease' in no_costume
+
+
+def test_specifics_are_only_about_things_people_chose():
+    text = prompts.SYSTEM_PROMPT
+    assert "something they CHOSE" in text
+    for off_limits in ("body", "weight", "face", "skin", "glasses", "mobility aid"):
+        assert off_limits in text
+    assert "Little kids and pets are never sarcastic targets" in text

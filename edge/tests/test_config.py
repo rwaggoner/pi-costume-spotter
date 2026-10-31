@@ -35,3 +35,12 @@ def test_explicit_values_override_the_profile():
     settings = make(edge_profile=Profile.PI, camera_source="webcam", detector="hog")
     assert settings.camera_source == "webcam"
     assert settings.detector == "hog"
+
+
+def test_sarcasm_rate_must_be_a_share():
+    import pytest
+    from pydantic import ValidationError
+
+    assert make().sarcasm_rate == 0.4
+    with pytest.raises(ValidationError):
+        make(sarcasm_rate=1.5)

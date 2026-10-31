@@ -10,7 +10,7 @@ tests construct ``Settings(...)`` with explicit values.
 from enum import StrEnum
 from pathlib import Path
 
-from pydantic import model_validator
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -86,6 +86,9 @@ class Settings(BaseSettings):
     group_wait_seconds: float = 1.0  # longest a group waits for friends a step behind
     group_max_size: int = 6  # people per Claude call; bigger crowds become several groups
     shout_out_max_group: int = 3  # speak per-costume shout-outs for groups up to this size
+    # 03-F14: share of greetings (0-1) where big kids, teens and adults get dry
+    # sarcasm instead of warmth. Little kids never do. 0 = always warm.
+    sarcasm_rate: float = Field(default=0.4, ge=0.0, le=1.0)
     # --- Photos sent to Claude (02-F8) ---
     snapshots_per_visitor: int = 3  # best photo + up to 2 other moments; 1 = best only
     max_images_per_call: int = 8  # extras fill this budget after everyone's best photo

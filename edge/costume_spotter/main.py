@@ -147,7 +147,8 @@ def build_application(settings: Settings) -> FastAPI:
                                    timeout_seconds=settings.identify_timeout_seconds,
                                    detector_name=detector.name,
                                    shout_out_max_group=settings.shout_out_max_group,
-                                   max_images_per_call=settings.max_images_per_call)
+                                   max_images_per_call=settings.max_images_per_call,
+                                   sarcasm_rate=settings.sarcasm_rate)
     tts_engine = build_tts_engine(settings)
     audio_filter = None
     if settings.spooky_voice:
