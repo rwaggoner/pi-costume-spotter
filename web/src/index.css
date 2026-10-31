@@ -5,3 +5,21 @@
 body {
   @apply bg-zinc-950 text-zinc-200 antialiased;
 }
+
+/* Chart tokens (06-F11). The dashboard is dark-only, so these are the dark
+   steps of the reference palette, validated against the card surface
+   (zinc-900, #18181b): blue / orange / aqua / yellow pass every check, and the
+   first three also pass all-pairs (the line chart). Marks use --series-*;
+   text never does. */
+:root {
+  --chart-surface: #18181b;
+  --chart-grid: #2c2c2a;
+  --chart-axis: #383835;
+  --chart-muted: #898781;
+  --chart-ink: #f0efec;
+  --chart-ink-2: #c3c2b7;
+  --series-1: #3987e5; /* in costume */
+  --series-2: #d95926; /* no costume */
+  --series-3: #199e70; /* pets */
+  --series-4: #c98500; /* not identified */
+}

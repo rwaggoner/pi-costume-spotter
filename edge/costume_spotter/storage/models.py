@@ -3,13 +3,15 @@ docs/requirements/05-storage.md, as code.
 
 Schema management is ``create_all()`` at startup rather than migrations: the edge
 DB holds auto-pruned, disposable data, so "delete the file" is a valid migration
-path (argued in ADR-004). The cloud tier's durable Postgres gets real Flyway
+path (argued in ADR-004). Columns added later are back-filled by a small
+ALTER TABLE step in the repository, so an existing night's data survives.
+The cloud tier's durable Postgres gets real Flyway
 migrations — rigor proportional to durability.
 """
 
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, Index, String, Text
+from sqlalchemy import Boolean, DateTime, Index, Integer, String, Text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -34,5 +36,10 @@ class SightingRow(Base):
     detector: Mapped[str] = mapped_column(String(20), nullable=False)
     box_json: Mapped[str] = mapped_column(Text, nullable=False)  # for the dashboard overlay
     source: Mapped[str] = mapped_column(String(20), nullable=False)  # claude|pretend|fallback
+    # For the stats page (06-F11). Added after the first release, so
+    # repository._add_missing_columns() adds them to older databases.
+    visitor_type: Mapped[str] = mapped_column(String(10), nullable=False, default="person")
+    group_id: Mapped[str] = mapped_column(String(32), nullable=False, default="")
+    group_size: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
 
     __table_args__ = (Index("ix_sightings_spotted_at", "spotted_at"),)

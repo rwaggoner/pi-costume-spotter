@@ -12,7 +12,7 @@ import { api } from "../api/client";
 import type { Sighting, Stats } from "../api/types";
 import type { LogEntry } from "./useEventSocket";
 
-export function useSightings(log: LogEntry[]) {
+export function useSightings(log: LogEntry[], resets = 0) {
   const [sightings, setSightings] = useState<Sighting[]>([]);
   const [stats, setStats] = useState<Stats | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -37,7 +37,7 @@ export function useSightings(log: LogEntry[]) {
 
   useEffect(() => {
     void refresh();
-  }, [refresh, loggedCount]);
+  }, [refresh, loggedCount, resets]);
 
   return { sightings, stats, error, refresh };
 }

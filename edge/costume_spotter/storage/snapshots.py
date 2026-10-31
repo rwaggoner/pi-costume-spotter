@@ -43,6 +43,15 @@ class SnapshotStore:
         path = self._dir / filename
         return path if path.is_file() else None
 
+    def clear(self) -> int:
+        """Delete every snapshot (06-F12, the dashboard's reset button)."""
+        removed = 0
+        if self._dir.is_dir():
+            for f in self._dir.glob("*.jpg"):
+                f.unlink(missing_ok=True)
+                removed += 1
+        return removed
+
     def prune(self) -> int:
         """Delete snapshots older than the retention window (05-F3).
 

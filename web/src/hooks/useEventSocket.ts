@@ -55,6 +55,8 @@ function describe(event: WireEvent): string {
       return `Sighting saved${event.snapshot_file ? " with snapshot" : ""}`;
     case "CommentSpoken":
       return event.spoken ? `Spoke via ${event.engine}: “${event.text}”` : "Speech failed";
+    case "DataReset":
+      return `All data reset: ${event.sightings_removed} sightings deleted`;
     default:
       return event.kind;
   }
@@ -66,6 +68,9 @@ export function useEventSocket() {
   const [detections, setDetections] = useState<Detection[]>([]);
   const [fps, setFps] = useState(0);
   const [componentStatus, setComponentStatus] = useState<Record<string, SystemStatusEvent>>({});
+  // Bumped on every DataReset (06-F12), so views refetch even if their own
+  // trigger (e.g. a count of saved sightings) happens not to change.
+  const [resets, setResets] = useState(0);
   const nextId = useRef(1);
 
   // Seed component status from REST once: SystemStatus heartbeats are sparse
@@ -116,9 +121,16 @@ export function useEventSocket() {
         } else if (event.kind === "SystemStatus") {
           setComponentStatus((prev) => ({ ...prev, [event.component]: event }));
         }
+        if (event.kind === "DataReset") {
+          setResets((n) => n + 1);
+        }
         if (!SILENT_KINDS.has(event.kind)) {
           const text = describe(event);
           setLog((prev) => {
+            // A reset starts the log over too: only the reset itself remains.
+            if (event.kind === "DataReset") {
+              return [{ id: nextId.current++, timestamp: event.timestamp, kind: event.kind, text }];
+            }
             // A group's greeting is one utterance but one CommentSpoken per
             // sighting; log it once.
             if (event.kind === "CommentSpoken" && prev[0]?.kind === event.kind && prev[0].text === text) {
@@ -149,5 +161,5 @@ export function useEventSocket() {
     };
   }, []);
 
-  return { connected, log, detections, fps, componentStatus };
+  return { connected, log, detections, fps, componentStatus, resets };
 }

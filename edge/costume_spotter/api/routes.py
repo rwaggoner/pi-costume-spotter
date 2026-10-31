@@ -12,6 +12,8 @@ from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
+from costume_spotter.events import DataReset
+
 router = APIRouter(prefix="/api")
 
 
@@ -68,6 +70,30 @@ async def sighting_snapshot(request: Request, sighting_id: str) -> FileResponse:
 @router.get("/stats")
 async def stats(request: Request) -> dict:
     return await asyncio.to_thread(request.app.state.repository.stats)
+
+
+@router.get("/stats/night")
+async def night_stats(request: Request,
+                      hours: float = Query(2.0, ge=0, le=24 * 30)) -> dict:
+    """Everything the stats page draws (06-F11). hours=0 = every sighting kept."""
+    return await asyncio.to_thread(request.app.state.repository.night_stats, hours or None)
+
+
+class ResetRequest(BaseModel):
+    confirm: str  # must be "reset": a stray POST can't wipe the night
+
+
+@router.post("/reset")
+async def reset(request: Request, body: ResetRequest) -> dict:
+    """Delete every sighting and snapshot (06-F12). Open dashboards hear about
+    it over the event socket and clear themselves."""
+    if body.confirm != "reset":
+        raise HTTPException(400, 'send {"confirm": "reset"} to delete all sightings')
+    removed = await asyncio.to_thread(request.app.state.repository.reset)
+    snapshots = await asyncio.to_thread(request.app.state.snapshots.clear)
+    request.app.state.bus.publish(DataReset(sightings_removed=removed,
+                                            snapshots_removed=snapshots))
+    return {"sightings_removed": removed, "snapshots_removed": snapshots}
 
 
 @router.get("/health")

@@ -6,12 +6,15 @@
  */
 
 import type { SystemStatusEvent } from "../api/types";
+import type { Page } from "../App";
+import { ResetButton } from "./ResetButton";
 
 const COMPONENTS = ["camera", "detector", "identifier", "speech", "cloudsync"] as const;
 
 interface Props {
   connected: boolean;
   componentStatus: Record<string, SystemStatusEvent>;
+  page: Page;
 }
 
 function Light({ label, ok, detail }: { label: string; ok: boolean | null; detail?: string }) {
@@ -24,14 +27,32 @@ function Light({ label, ok, detail }: { label: string; ok: boolean | null; detai
   );
 }
 
-export function StatusHeader({ connected, componentStatus }: Props) {
+const TABS: { page: Page; href: string; label: string }[] = [
+  { page: "live", href: "#/", label: "Live" },
+  { page: "stats", href: "#/stats", label: "Stats" },
+];
+
+export function StatusHeader({ connected, componentStatus, page }: Props) {
   return (
     <header className="flex flex-wrap items-center justify-between gap-3 pb-4">
-      <h1 className="text-xl font-bold text-zinc-100">
-        🎃 Costume Spotter
-        <span className="ml-2 text-sm font-normal text-zinc-500">porch watch, live</span>
-      </h1>
-      <nav className="flex items-center gap-4">
+      <div className="flex flex-wrap items-center gap-4">
+        <h1 className="text-xl font-bold text-zinc-100">🎃 Costume Spotter</h1>
+        <nav aria-label="Pages" className="flex gap-1">
+          {TABS.map((tab) => (
+            <a
+              key={tab.page}
+              href={tab.href}
+              aria-current={page === tab.page ? "page" : undefined}
+              className={`rounded-md px-3 py-1 text-sm ${page === tab.page
+                ? "bg-zinc-800 font-semibold text-zinc-100"
+                : "text-zinc-400 hover:bg-zinc-900 hover:text-zinc-200"}`}
+            >
+              {tab.label}
+            </a>
+          ))}
+        </nav>
+      </div>
+      <div className="flex flex-wrap items-center gap-4">
         <Light label="link" ok={connected} detail="dashboard ↔ edge WebSocket" />
         {COMPONENTS.map((name) => {
           const status = componentStatus[name];
@@ -45,7 +66,8 @@ export function StatusHeader({ connected, componentStatus }: Props) {
             />
           );
         })}
-      </nav>
+        <ResetButton />
+      </div>
     </header>
   );
 }
