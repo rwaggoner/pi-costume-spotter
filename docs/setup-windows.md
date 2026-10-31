@@ -132,6 +132,29 @@ For a dedicated porch PC, also turn on automatic sign-in.
 - **Stop:** `Stop-ScheduledTask -TaskName "Costume Spotter"`
 - **Remove:** re-run the script with `-Uninstall`
 
+## 8. Update and restart (one step)
+
+After pulling new code, changing `edge\.env`, or whenever the app needs a clean
+restart, double-click **`update.cmd`** in the repo folder, or run:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File edge\deploy\windows\update.ps1
+```
+
+It pulls the latest code (skipped if you have uncommitted changes), stops the
+running app, updates Python packages (keeping the DirectML GPU runtime if you
+use it), rebuilds the dashboard, tells you whether the AI is on or in pretend
+mode, and starts the app again: through the autostart task if installed,
+otherwise in that window.
+
+| Option | Effect |
+|--------|--------|
+| `-NoPull` | Don't `git pull` |
+| `-SkipDashboard` | Don't rebuild the dashboard |
+| `-NoStart` | Update and rebuild, but leave the app stopped |
+
+(With `update.cmd`, add options after it: `update.cmd -NoPull -SkipDashboard`.)
+
 ## Troubleshooting
 
 | Symptom | Likely cause |

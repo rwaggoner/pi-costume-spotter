@@ -151,6 +151,9 @@ cd edge; .venv\Scripts\python.exe -m costume_spotter
 No activation needed: the script runs the venv's Python directly. Full guide:
 [docs/setup-windows.md](docs/setup-windows.md).
 
+After that, **`update.cmd`** in the repo folder pulls, rebuilds and restarts
+everything in one step (double-click it).
+
 ## Hardware
 
 | Part | Role |

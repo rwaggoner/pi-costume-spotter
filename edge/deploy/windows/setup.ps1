@@ -130,6 +130,10 @@ try {
         # `onnxruntime` module name, so the CPU one must go before DirectML lands.
         Invoke-Checked $VenvPython @("-m", "pip", "uninstall", "-y", "onnxruntime", "--quiet")
         Invoke-Checked $VenvPython @("-m", "pip", "install", "-e", ".[directml]", "--quiet")
+        # Uninstalling the CPU build deletes files the two builds share; on a
+        # re-run DirectML is "already installed", so force it back in whole.
+        Invoke-Checked $VenvPython @("-m", "pip", "install", "--force-reinstall", "--no-deps",
+                                     "--quiet", "onnxruntime-directml")
         Ok "installed (DirectML GPU runtime)"
     } else {
         Ok "installed (CPU runtime)"
