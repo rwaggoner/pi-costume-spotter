@@ -175,22 +175,15 @@ Step "Checking settings"
 Push-Location $EdgeDir
 try {
     # Loads settings exactly as the app will; a bad value in edge\.env is
-    # reported by name (e.g. "TRACKER_MIN_HITS: Input should be a valid integer").
-    $check = @'
-from costume_spotter.config import Settings
-try:
-    s = Settings()
-except Exception as e:
-    errs = e.errors() if hasattr(e, "errors") else None
-    print("BAD " + ("; ".join(".".join(map(str, x["loc"])).upper() + ": " + x["msg"]
-                              for x in errs) if errs else str(e)))
-    raise SystemExit(1)
-print(("on: " + s.claude_model) if s.anthropic_api_key else "OFF")
-'@
-    $code = Invoke-Quiet $VenvPython @("-c", $check)
+    # reported by name. A module, not `python -c "..."`: Windows PowerShell 5.1
+    # mangles double quotes in program arguments (that broke the first version).
+    $code = Invoke-Quiet $VenvPython @("-m", "costume_spotter.check_settings")
     $ai = $script:QuietOutput | Select-Object -Last 1
     if ($code -ne 0) {
-        throw "edge\.env has a setting the app can't use: $("$ai" -replace '^BAD ', '')"
+        if ("$ai".StartsWith("BAD ")) {
+            throw "edge\.env has a setting the app can't use: $("$ai".Substring(4))"
+        }
+        throw "the settings check failed:`n$($script:QuietOutput -join "`n")"
     }
     if ("$ai".StartsWith("on")) {
         Ok "AI costume identification $ai"
