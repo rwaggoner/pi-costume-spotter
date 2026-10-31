@@ -38,6 +38,35 @@ export interface Stats {
   per_hour: { hour: string; count: number }[];
 }
 
+/** /api/stats/night — the stats page (06-F11). Times are ISO UTC ("Z"). */
+export type VisitorCategory = "costume" | "no_costume" | "pet" | "unidentified";
+
+export interface TimelineBucket extends Record<VisitorCategory, number> {
+  start: string;
+}
+
+export interface NightStats {
+  window: { start: string; end: string; bucket_minutes: number; hours: number | null };
+  totals: Record<VisitorCategory, number> & {
+    visitors: number;
+    people: number;
+    dogs: number;
+    cats: number;
+    groups: number;
+    average_group: number;
+    largest_group: number;
+    unique_costumes: number;
+    first_visit: string | null;
+    last_visit: string | null;
+    busiest: { start: string; count: number } | null;
+  };
+  timeline: TimelineBucket[];
+  costumes: { costume: string; count: number }[];
+  other_costumes: number;
+  group_sizes: { size: string; count: number }[];
+  confidence: { high: number; medium: number; low: number };
+}
+
 export interface Health {
   components: Record<string, { ok: boolean; detail: string; updated_at: string }>;
   stream_fps: number;
@@ -68,7 +97,8 @@ export type WireEvent =
   | GreetingReadyEvent
   | SightingLoggedEvent
   | CommentSpokenEvent
-  | SystemStatusEvent;
+  | SystemStatusEvent
+  | DataResetEvent;
 
 interface EventBase {
   kind: string;
@@ -141,4 +171,11 @@ export interface SystemStatusEvent extends EventBase {
   component: string;
   ok: boolean;
   detail: string;
+}
+
+/** Everything was deleted from the dashboard's reset button (06-F12). */
+export interface DataResetEvent extends EventBase {
+  kind: "DataReset";
+  sightings_removed: number;
+  snapshots_removed: number;
 }

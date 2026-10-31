@@ -62,6 +62,9 @@ class SightingLogger:
                 detector=event.detector,
                 box=event.box.__dict__,
                 source=event.source,
+                visitor_type=event.visitor_type,
+                group_id=event.group_id,
+                group_size=event.group_size,
             )
         except Exception:
             logger.exception("failed to persist sighting %s", event.sighting_id)

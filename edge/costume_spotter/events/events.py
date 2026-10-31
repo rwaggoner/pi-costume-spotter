@@ -209,3 +209,12 @@ class SystemStatus(BaseEvent):
     component: str  # camera | detector | identifier | speech | storage | cloudsync
     ok: bool
     detail: str = ""
+
+
+@dataclass(frozen=True)
+class DataReset(BaseEvent):
+    """Every sighting and snapshot was deleted from the dashboard (06-F12).
+    Open dashboards clear their log; the identifier forgets tonight's costumes."""
+
+    sightings_removed: int
+    snapshots_removed: int

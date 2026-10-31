@@ -6,7 +6,7 @@
  * bundle and the API, so relative URLs are simply correct.
  */
 
-import type { Health, SightingsPage, Stats } from "./types";
+import type { Health, NightStats, SightingsPage, Stats } from "./types";
 
 async function getJson<T>(url: string): Promise<T> {
   const response = await fetch(url);
@@ -21,6 +21,18 @@ export const api = {
     getJson<SightingsPage>(`/api/sightings?limit=${limit}&offset=${offset}`),
   stats: () => getJson<Stats>("/api/stats"),
   health: () => getJson<Health>("/api/health"),
+  /** hours = 0 means every sighting kept. */
+  nightStats: (hours: number) => getJson<NightStats>(`/api/stats/night?hours=${hours}`),
+  /** Deletes every sighting and snapshot (06-F12). */
+  reset: async () => {
+    const response = await fetch("/api/reset", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ confirm: "reset" }),
+    });
+    if (!response.ok) throw new Error(`/api/reset -> HTTP ${response.status}`);
+    return (await response.json()) as { sightings_removed: number; snapshots_removed: number };
+  },
   /** URL (not a fetch) — used directly in <img src>. */
   snapshotUrl: (sightingId: string) => `/api/sightings/${sightingId}/snapshot`,
 };

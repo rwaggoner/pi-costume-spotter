@@ -26,6 +26,8 @@ the Pi).
 | 06-F8 | **Sightings table:** history with snapshot thumbnails, costume, comment, time; paginated from the REST API. |
 | 06-F9 | **Stats:** total sightings, sightings today, top costume; bar chart of costume counts. |
 | 06-F10 | **Status header:** camera/detector/identifier/speech health from heartbeats; WebSocket auto-reconnects with visible connection state. |
+| 06-F11 | **Stats page** (`#/stats`, from `GET /api/stats/night?hours=`): one time-window filter (last hour / 2 hours / 4 hours / everything) above everything. A hero visitor count and tiles (in costume, no costume, pets, different costumes, groups, busiest time, confident IDs, not identified), visitors over time (one line each for in costume / no costume / pets, crosshair tooltip), the costume-or-not mix (segmented bar), top costumes (ranked bars, names merged case-insensitively), and group sizes (columns). Every chart has a table view. Colours are the dark steps of the reference data-viz palette, validated against the card surface. |
+| 06-F12 | **Reset:** a "Reset data…" button in the header, with a confirm dialog, calls `POST /api/reset` (`{"confirm": "reset"}`), which deletes every sighting and snapshot and publishes `DataReset`. Every open dashboard clears its log and refetches; the identifier forgets tonight's costume list (03-F13). |
 
 ## Non-functional requirements
 

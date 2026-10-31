@@ -27,6 +27,7 @@ from itertools import cycle
 
 from costume_spotter.events import (
     CostumeIdentified,
+    DataReset,
     EventBus,
     GreetingReady,
     GroupSpotted,
@@ -117,6 +118,11 @@ class CostumeIdentifier:
         # Small queue on purpose: if identification falls behind a crowd, greeting
         # the freshest arrivals beats working through people who already left.
         bus.subscribe(self.on_group, to=(GroupSpotted,), name="vision.identifier", queue_size=8)
+        bus.subscribe(self.on_reset, to=(DataReset,), name="vision.identifier.reset")
+
+    async def on_reset(self, event: BaseEvent) -> None:
+        """A reset starts the night over: tonight's costume list goes too (03-F13)."""
+        self._recent_costumes.clear()
 
     async def on_group(self, event: BaseEvent) -> None:
         assert isinstance(event, GroupSpotted)

@@ -39,7 +39,13 @@ CREATE TABLE sightings (
     spoken        BOOLEAN NOT NULL DEFAULT 0,
     snapshot_file TEXT,               -- NULL in metadata-only mode
     detector      TEXT NOT NULL,      -- hailo | imx500 | mock
-    box_json      TEXT NOT NULL       -- bounding box for the dashboard overlay
+    box_json      TEXT NOT NULL,      -- bounding box for the dashboard overlay
+    source        TEXT NOT NULL,      -- claude | pretend | fallback
+    visitor_type  TEXT NOT NULL DEFAULT 'person', -- person | dog | cat  (06-F11)
+    group_id      TEXT NOT NULL DEFAULT '',       -- visitors greeted together (06-F11)
+    group_size    INTEGER NOT NULL DEFAULT 1      -- (06-F11)
 );
+-- The last three were added later; SightingRepository adds them to an older
+-- database with ALTER TABLE at startup, keeping its rows.
 CREATE INDEX ix_sightings_spotted_at ON sightings (spotted_at);
 ```
