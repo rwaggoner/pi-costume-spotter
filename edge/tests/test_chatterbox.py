@@ -264,3 +264,52 @@ def test_server_script_imports_the_real_chatterbox_package(tmp_path):
         capture_output=True, text=True, timeout=60,
         env={**os.environ, "PYTHONPATH": str(tmp_path)})
     assert "chatterbox ok" in result.stdout, result.stdout + result.stderr
+
+
+def test_voice_clip_is_passed_to_the_server_as_an_absolute_path(tmp_path, monkeypatch):
+    """The server runs in the log folder, so ./models/voices/x.wav must be resolved."""
+    import subprocess
+
+    clip = tmp_path / "models" / "voices" / "me.wav"
+    clip.parent.mkdir(parents=True)
+    clip.write_bytes(b"RIFF")
+    monkeypatch.chdir(tmp_path)
+    launched = {}
+
+    class FakePopen:
+        def __init__(self, command, **kwargs):
+            launched["command"] = command
+
+        def poll(self):
+            return None
+
+    monkeypatch.setattr(subprocess, "Popen", FakePopen)
+    ChatterboxTtsEngine(free_port_url(), None, server_python=sys.executable,
+                        voice_clip="./models/voices/me.wav", log_dir=tmp_path / "logs")
+    command = launched["command"]
+    assert command[command.index("--voice-clip") + 1] == str(clip.resolve())
+
+
+def test_a_crashed_server_is_reported_once_with_its_last_log_line(tmp_path, monkeypatch, caplog):
+    import subprocess
+
+    class Exited:
+        returncode = 1
+
+        def __init__(self, command, **kwargs):
+            (tmp_path / "logs" / "chatterbox.log").write_text(
+                "loading...\nvoice clip not found: C:\\x.wav\n")
+
+        def poll(self):
+            return 1
+
+    monkeypatch.setattr(subprocess, "Popen", Exited)
+    piper = Recorder()
+    engine = ChatterboxTtsEngine(free_port_url(), piper, server_python=sys.executable,
+                                 log_dir=tmp_path / "logs")
+    with caplog.at_level("WARNING"):
+        engine.synthesize("Hello!")
+        engine.synthesize("Hello again!")
+    stopped = [r.getMessage() for r in caplog.records if "stopped" in r.getMessage()]
+    assert len(stopped) == 1 and "voice clip not found" in stopped[0]
+    assert piper.said == ["Hello!", "Hello again!"]

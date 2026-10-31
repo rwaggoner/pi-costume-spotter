@@ -63,6 +63,8 @@ class ChatterboxTtsEngine(TtsEngine):
         self._timeout = timeout_seconds
         self._ready = False  # set once /health answers; cleared on connection errors
         self._process: subprocess.Popen | None = None
+        self._log_path: Path | None = None
+        self._reported_exit = False
         if server_python is not None:
             self._process = self._start_server(Path(server_python), voice_clip, log_dir)
 
@@ -78,8 +80,10 @@ class ChatterboxTtsEngine(TtsEngine):
         if voice_clip is not None:
             if not Path(voice_clip).is_file():
                 raise RuntimeError(f"CHATTERBOX_VOICE_CLIP not found: {voice_clip}")
-            command += ["--voice-clip", str(voice_clip)]
+            # Absolute: the server runs in the log folder, not where .env paths start.
+            command += ["--voice-clip", str(Path(voice_clip).resolve())]
         log_path = Path(log_dir or ".") / "chatterbox.log"
+        self._log_path = log_path
         log_path.parent.mkdir(parents=True, exist_ok=True)
         log = open(log_path, "ab")  # noqa: SIM115 — owned by the child for its lifetime
         flags = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
@@ -102,7 +106,12 @@ class ChatterboxTtsEngine(TtsEngine):
         if self._ready:
             return True
         if self._process is not None and self._process.poll() is not None:
-            return False  # it exited; chatterbox.log says why
+            if not self._reported_exit:  # say why once, not on every greeting
+                self._reported_exit = True
+                logger.warning("the Chatterbox voice server stopped (exit %s): %s - %s speaks "
+                               "instead. Full log: %s", self._process.returncode,
+                               self._last_log_line(), self._fallback_name, self._log_path)
+            return False
         try:
             with urllib.request.urlopen(f"{self._url}/health", timeout=0.5) as reply:
                 info = json.loads(reply.read())
@@ -112,6 +121,13 @@ class ChatterboxTtsEngine(TtsEngine):
         if self._ready:
             logger.info("Chatterbox voice ready: %s, voice %s", info.get("gpu"), info.get("voice"))
         return self._ready
+
+    def _last_log_line(self) -> str:
+        try:
+            lines = self._log_path.read_text(errors="replace").strip().splitlines()
+        except (OSError, AttributeError):
+            return "no log"
+        return lines[-1] if lines else "nothing logged"
 
     # -- speech ------------------------------------------------------------------
 
