@@ -30,6 +30,10 @@ class SightingLogger:
         self._bus = bus
         self._repository = repository
         self._snapshots = snapshots
+        # Sightings whose greeting finished before their row was written: with
+        # the greeting spoken while Claude is still writing (03-F15), that's
+        # common. Applied when the row arrives. Bounded by the queue sizes.
+        self._spoken_before_row: set[str] = set()
         # Generous queue: unlike video frames, sightings must not be shed —
         # a burst of 256 simultaneous trick-or-treaters would be a good problem.
         bus.subscribe(self.on_costume_identified, to=(CostumeIdentified,),
@@ -52,7 +56,8 @@ class SightingLogger:
                 costume=event.costume,
                 confidence=event.confidence,
                 comment=event.comment,
-                spoken=False,  # speech reports back later via mark_spoken
+                # Usually False: speech reports back later via mark_spoken.
+                spoken=event.sighting_id in self._spoken_before_row,
                 snapshot_file=snapshot_file,
                 detector=event.detector,
                 box=event.box.__dict__,
@@ -62,6 +67,10 @@ class SightingLogger:
             logger.exception("failed to persist sighting %s", event.sighting_id)
             self._bus.publish(SystemStatus(component="storage", ok=False, detail="write failed"))
             return
+        if event.sighting_id in self._spoken_before_row:
+            # Spoken while the row was being written: make sure the flag stuck.
+            self._spoken_before_row.discard(event.sighting_id)
+            await asyncio.to_thread(self._repository.mark_spoken, event.sighting_id)
         self._bus.publish(SightingLogged(
             sighting_id=event.sighting_id, costume=event.costume,
             comment=event.comment, snapshot_file=snapshot_file,
@@ -70,13 +79,16 @@ class SightingLogger:
     async def on_comment_spoken(self, event: BaseEvent) -> None:
         """Flip the row's ``spoken`` flag once speech confirms playback.
 
-        Speech takes seconds while the row write takes milliseconds, so the row
-        reliably exists by the time this fires; if it somehow doesn't,
-        mark_spoken is a silent no-op and the flag just stays false.
+        The greeting is now spoken while Claude is still writing the rest of
+        its reply (03-F15), so this can arrive BEFORE the row exists; the id is
+        then remembered and applied when the row is written.
         """
         assert isinstance(event, CommentSpoken)
         if event.spoken:
-            await asyncio.to_thread(self._repository.mark_spoken, event.sighting_id)
+            # Remembered first, so a row written in the meantime still picks it up.
+            self._spoken_before_row.add(event.sighting_id)
+            if await asyncio.to_thread(self._repository.mark_spoken, event.sighting_id):
+                self._spoken_before_row.discard(event.sighting_id)
 
     async def prune_forever(self, interval_seconds: float = 86_400) -> None:
         """Retention job (05-F3): prune at startup, then daily. Run as an asyncio task."""

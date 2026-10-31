@@ -82,6 +82,9 @@ class Settings(BaseSettings):
     tracker_max_misses: int = 2  # 02-F3: missed frames tolerated while counting those hits
     tracker_retire_seconds: float = 30.0  # 02-F4: absence before a visitor is forgotten
     tracker_iou_threshold: float = 0.3  # 02-F1: minimum overlap to match across frames
+    # 02-F9: someone greeted who reappears within this many seconds, looking the
+    # same, isn't greeted again. 0 = off.
+    regreet_cooldown_seconds: float = Field(default=60.0, ge=0.0)
     # --- Groups (02-F7, 03-F9, 04-F9) ---
     group_wait_seconds: float = 1.0  # longest a group waits for friends a step behind
     group_max_size: int = 6  # people per Claude call; bigger crowds become several groups

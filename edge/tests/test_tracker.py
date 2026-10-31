@@ -77,7 +77,8 @@ def test_returning_visitor_is_greeted_again():  # 02-F4: retire, then re-announc
     for i in range(4):
         announced += tracker.update([detection(100, 100)], F, now=i * 0.1)
     assert len(announced) == 1
-    # Gone for 60s (> retire_seconds=30), then back at the same spot.
+    # Gone for 60s (> retire_seconds=30 and > the 60 s re-greet guard, 02-F9),
+    # then back at the same spot.
     announced += tracker.update([], F, now=61.0)
     for i in range(4):
         announced += tracker.update([detection(100, 100)], F, now=62.0 + i * 0.1)
@@ -175,3 +176,71 @@ def test_snapshots_per_visitor_one_means_best_only():
     for i in range(3):
         announced += tracker.update([detection(100, 100, 40 + i, 80)], _frame_with(i), now=i)
     assert announced[0].extra_snapshots == ()
+
+
+# -- re-greet guard (02-F9) ---------------------------------------------------------
+
+def painted(*people: tuple[int, int, tuple[int, int, int]], w: int = 40, h: int = 80):
+    """A frame with a solid-coloured 'costume' at each (x, y, rgb)."""
+    f = np.full((480, 640, 3), 90, np.uint8)  # grey porch
+    for x, y, rgb in people:
+        f[y:y + h, x:x + w] = rgb
+    return f
+
+
+ORANGE, BLACK, GREEN = (230, 120, 20), (15, 15, 20), (40, 200, 60)
+
+
+def walk(tracker, x, y, rgb, start, frames=4, step=0.1):
+    out = []
+    for i in range(frames):
+        out += tracker.update([detection(x, y)], painted((x, y, rgb)), now=start + i * step)
+    return out
+
+
+def test_lost_for_a_moment_then_seen_elsewhere_is_not_greeted_twice():
+    """Bent over the candy bowl: the box jumps (no IoU overlap), same costume."""
+    tracker = make_tracker(min_hits=3)
+    assert len(walk(tracker, 100, 100, ORANGE, start=0)) == 1
+    assert walk(tracker, 150, 140, ORANGE, start=2.0) == []  # 1.6 s later, a step away
+    assert walk(tracker, 152, 142, ORANGE, start=2.4) == []  # and keeps being them
+
+
+def test_same_look_after_retirement_within_the_cooldown_is_not_greeted_twice():
+    tracker = make_tracker(min_hits=3)  # retire_seconds=30, regreet_seconds=60
+    assert len(walk(tracker, 100, 100, ORANGE, start=0)) == 1
+    tracker.update([], painted(), now=35.0)  # retired from tracking...
+    assert walk(tracker, 400, 100, ORANGE, start=40.0) == []  # ...but still recognised
+
+
+def test_after_the_cooldown_they_are_greeted_again():
+    tracker = make_tracker(min_hits=3)
+    assert len(walk(tracker, 100, 100, ORANGE, start=0)) == 1
+    tracker.update([], painted(), now=35.0)
+    assert len(walk(tracker, 100, 100, ORANGE, start=70.0)) == 1
+
+
+def test_someone_who_looks_different_is_greeted():
+    tracker = make_tracker(min_hits=3)
+    assert len(walk(tracker, 100, 100, ORANGE, start=0)) == 1
+    assert len(walk(tracker, 150, 140, GREEN, start=2.0)) == 1
+
+
+def test_lookalikes_side_by_side_are_both_greeted():
+    """Vampires travel in packs: a greeted visitor still in frame can't be the newcomer."""
+    tracker = make_tracker(min_hits=3)
+    announced = []
+    for i in range(4):
+        announced += tracker.update([detection(100, 100)], painted((100, 100, BLACK)),
+                                    now=i * 0.1)
+    for i in range(4):
+        frame_ = painted((100, 100, BLACK), (300, 100, BLACK))
+        announced += tracker.update([detection(100, 100), detection(300, 100)], frame_,
+                                    now=1.0 + i * 0.1)
+    assert len(announced) == 2
+
+
+def test_guard_can_be_turned_off():
+    tracker = VisitorTracker(min_hits=3, retire_seconds=30.0, regreet_seconds=0)
+    assert len(walk(tracker, 100, 100, ORANGE, start=0)) == 1
+    assert len(walk(tracker, 150, 140, ORANGE, start=2.0)) == 1
