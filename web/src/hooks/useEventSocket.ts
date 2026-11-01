@@ -47,13 +47,15 @@ function describe(event: WireEvent): string {
           : event.source === "fallback"
             ? " [AI unreachable: placeholder]"
             : "";
+      const theme = event.theme ? ` [theme: ${event.theme}]` : "";
       return event.costume
-        ? `Identified: ${event.costume} (${event.confidence}) — “${event.comment}”${note}`
-        : `No costume — “${event.comment}”${note}`;
+        ? `Identified: ${event.costume} (${event.confidence})${theme} — “${event.comment}”${note}`
+        : `No costume${theme} — “${event.comment}”${note}`;
     }
     case "SightingLogged":
       return `Sighting saved${event.snapshot_file ? " with snapshot" : ""}`;
     case "CommentSpoken":
+      if (event.skipped_late) return "Skipped a greeting: too late, they'd moved on";
       return event.spoken ? `Spoke via ${event.engine}: “${event.text}”` : "Speech failed";
     case "DataReset":
       return `All data reset: ${event.sightings_removed} sightings deleted`;

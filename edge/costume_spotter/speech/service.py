@@ -26,6 +26,7 @@ via the same 04-F5 handler.
 
 import asyncio
 import logging
+from datetime import UTC, datetime
 
 from costume_spotter.events import CommentSpoken, EventBus, GreetingReady, SystemStatus
 from costume_spotter.events.events import BaseEvent
@@ -38,8 +39,13 @@ class SpeechService:
     """Speaks each identified costume's comment through the configured engine."""
 
     def __init__(self, bus: EventBus, engine: TtsEngine, player: AudioPlayer,
-                 queue_max: int = 3, audio_filter=None) -> None:
+                 queue_max: int = 3, audio_filter=None,
+                 max_delay_seconds: float = 0.0) -> None:
         self._bus = bus
+        # 04-F11: a greeting this long after the group was spotted is about
+        # people who have probably left; skip it rather than talk to an empty
+        # porch while the people actually there wait. 0 = never skip.
+        self._max_delay = max_delay_seconds
         self._engine = engine
         self._player = player
         self._filter = audio_filter  # optional WAV→WAV transform (e.g. SpookyVoice)
@@ -49,6 +55,14 @@ class SpeechService:
     async def on_greeting(self, event: BaseEvent) -> None:
         assert isinstance(event, GreetingReady)
         spoken = False
+        if self._max_delay and event.spotted_at is not None:
+            late = (datetime.now(UTC) - event.spotted_at).total_seconds()
+            if late > self._max_delay:
+                logger.info("skipping a greeting %.0f s after its group was spotted "
+                            "(SPEECH_MAX_DELAY_SECONDS=%g): %r", late, self._max_delay,
+                            event.text[:60])
+                self._publish_spoken(event, spoken=False, skipped_late=True)
+                return
         try:
             # Synthesis and playback are blocking (subprocess / network / ALSA);
             # to_thread keeps the loop responsive (04-N3). Serialization is
@@ -84,7 +98,8 @@ class SpeechService:
             return self._filter.apply(wav, continuing=True)
         return self._filter.apply(wav)
 
-    def _publish_spoken(self, event: GreetingReady, spoken: bool) -> None:
+    def _publish_spoken(self, event: GreetingReady, spoken: bool,
+                        skipped_late: bool = False) -> None:
         # One CommentSpoken per sighting, so storage marks every member spoken (04-F6).
         for sighting_id in event.sighting_ids:
             self._bus.publish(CommentSpoken(
@@ -92,4 +107,5 @@ class SpeechService:
                 text=event.text,
                 engine=self._engine.name,
                 spoken=spoken,
+                skipped_late=skipped_late,
             ))

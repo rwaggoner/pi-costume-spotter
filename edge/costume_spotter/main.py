@@ -149,14 +149,16 @@ def build_application(settings: Settings) -> FastAPI:
                                    detector_name=detector.name,
                                    shout_out_max_group=settings.shout_out_max_group,
                                    max_images_per_call=settings.max_images_per_call,
-                                   sarcasm_rate=settings.sarcasm_rate)
+                                   sarcasm_rate=settings.sarcasm_rate,
+                                   max_concurrent=settings.identify_concurrency)
     tts_engine = build_tts_engine(settings)
     audio_filter = None
     if settings.spooky_voice:
         from costume_spotter.speech.spooky import SpookyVoice
         audio_filter = SpookyVoice()  # rotating spooky effect (issue #15)
     SpeechService(bus, tts_engine, build_audio_player(settings),
-                  queue_max=settings.speech_queue_max, audio_filter=audio_filter)
+                  queue_max=settings.speech_queue_max, audio_filter=audio_filter,
+                  max_delay_seconds=settings.speech_max_delay_seconds)
 
     # Optional cloud tier (07-F1: off unless explicitly enabled)
     if settings.cloud_sync_enabled:

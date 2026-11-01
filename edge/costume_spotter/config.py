@@ -88,13 +88,19 @@ class Settings(BaseSettings):
     # --- Groups (02-F7, 03-F9, 04-F9) ---
     group_wait_seconds: float = 1.0  # longest a group waits for friends a step behind
     group_max_size: int = 6  # people per Claude call; bigger crowds become several groups
-    shout_out_max_group: int = 3  # speak per-costume shout-outs for groups up to this size
+    # 04-F11: a group hears ONE greeting. Raise this to also speak a shout-out
+    # per visitor for groups up to this size (longer, and it backs up the porch).
+    shout_out_max_group: int = 1
+    # 04-F11: groups identified side by side, so a slow call doesn't make the
+    # next group wait in line.
+    identify_concurrency: int = Field(default=3, ge=1, le=8)
     # 03-F14: share of greetings (0-1) where big kids, teens and adults get dry
     # sarcasm instead of warmth. Little kids never do. 0 = always warm.
     sarcasm_rate: float = Field(default=0.4, ge=0.0, le=1.0)
     # --- Photos sent to Claude (02-F8) ---
-    snapshots_per_visitor: int = 3  # best photo + up to 2 other moments; 1 = best only
-    max_images_per_call: int = 8  # extras fill this budget after everyone's best photo
+    # Fewer photos = a smaller request and a faster first word from Claude.
+    snapshots_per_visitor: int = 2  # best photo + 1 other moment; 1 = best only
+    max_images_per_call: int = 6  # extras fill this budget after everyone's best photo
 
     # --- Speech (docs/requirements/04-speech.md) ---
     tts_engine: str = "null"  # piper | chatterbox | google | null
@@ -106,7 +112,10 @@ class Settings(BaseSettings):
     chatterbox_voice_clip: Path | None = None  # unset = Chatterbox's built-in voice
     chatterbox_timeout_seconds: float = 4.0  # per sentence, then the fallback speaks
     audio_device: str | None = None  # ALSA device on the Pi, e.g. "plughw:1,0" (Pi only)
-    speech_queue_max: int = 3  # 04-F4: older unspoken comments beyond this are dropped
+    speech_queue_max: int = 2  # 04-F4: older unspoken comments beyond this are dropped
+    # 04-F11: skip a greeting not started within this many seconds of the group
+    # being spotted (they've likely left). 0 = never skip.
+    speech_max_delay_seconds: float = Field(default=12.0, ge=0.0)
     spooky_voice: bool = False  # issue #15: rotate spooky voice effects (pure numpy)
 
     # --- Storage & privacy (docs/requirements/05-storage.md) ---

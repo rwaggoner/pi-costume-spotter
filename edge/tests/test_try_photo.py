@@ -32,7 +32,8 @@ async def test_group_mode_sends_every_photo_in_one_call(tmp_path, monkeypatch, c
     assert all(len(jpegs) == 1 for jpegs, _ in calls[0])  # one photo = one visitor
     assert all(kind == "" for _, kind in calls[0])  # person vs pet left to Claude
     out = capsys.readouterr().out
-    assert "a.jpg: Witch  [high]" in out and 'would say: "Spooky squad! Nice hat! Beep!"' in out
+    # One greeting per group (04-F11).
+    assert "a.jpg: Witch  [high]" in out and 'would say: "Spooky squad!"' in out
 
 
 def test_without_an_api_key_it_says_how_to_fix_it(tmp_path, monkeypatch, capsys):

@@ -2,8 +2,10 @@
 reviewed like logic changes (they are logic changes; see 03 requirements).
 
 One call per *group* (03-F9): Claude sees one photo per visitor, labeled
-"Visitor 1 (person)", "Visitor 2 (dog)", ..., and returns a greeting for
-everyone plus a short shout-out per visitor. A lone visitor is a group of one,
+"Visitor 1 (person)", "Visitor 2 (dog)", ..., and returns ONE greeting for
+everyone (04-F11: per-visitor shout-outs made a group several utterances
+long and backed the porch up), plus a shared costume theme when there is one
+(03-F16). A lone visitor is a group of one,
 where the greeting is the comment. Visitors can be pets (01-F7, 03-F11).
 
 The identification guidance implements 03-F10 (specific characters, props as
@@ -80,13 +82,24 @@ Pets:
 - If a photo labeled as a pet actually shows a person (or the reverse), go by
   what you see.
 
+Themes:
+- If two or more visitors' costumes share a theme (the same movie, show, game
+  or book; a famous duo or set like salt and pepper, Mario and Luigi, the
+  Ghostbusters, the Wizard of Oz cast; or matching family costumes), set
+  "theme" to a short name for it ("The Wizard of Oz", "Ghostbusters") and make
+  the theme the heart of the greeting: "Follow the yellow brick road, Dorothy,
+  Scarecrow and Tin Man!" Otherwise "theme" is null. Never invent a theme
+  that isn't clearly there.
+
 What to write:
-- "greeting": ONE line for everyone, at most 20 words. For a single visitor,
-  greet them about their costume. For a group, greet the group; you may name
-  the costumes together ("A vampire, a witch and a T-Rex!"). Include pets in
-  the group greeting ("Spider-Man and his pumpkin pup!").
-- For each visitor, a "shout_out": at most 8 words, specific to that visitor's
-  costume (or, for a pet without one, to the pet). Do not repeat the greeting's joke.
+- "greeting": the ONLY words spoken, so it covers everyone at once, at most
+  25 words. A single visitor: greet them about their costume. A group: one
+  line for the whole group, naming the costumes together ("A vampire, a witch
+  and a T-Rex!") or the theme they share. Include pets ("Spider-Man and his
+  pumpkin pup!"). Don't greet group members one by one.
+- Keep "clues" short: at most 10 words.
+- Only if this call asks for shout-outs, also give each visitor a
+  "shout_out": at most 6 words, about that visitor's costume.
 
 Rules for all words:
 - Family-friendly, warm, and playful. Puns encouraged.
@@ -121,12 +134,12 @@ Sarcasm (only when this call's instructions say so):
   put-down: the costume or the situation is the target, never the person, and
   it still ends with them getting candy.
 - Little kids and pets are never sarcastic targets, even in a sarcastic call.
-  In a mixed group, keep the greeting warm and put the sarcasm in the older
-  visitors' shout-outs.
+  In a mixed group, keep the greeting warm and aim one dry aside at the older
+  ones only.
 
 Respond with ONLY a JSON object, no other text, in exactly this shape, with one
 entry in "people" per visitor (pets included), in visitor order:
-{"greeting": "the greeting", "people": [{"clues": "what you can see", "age": "little kid|big kid|teen or adult|pet", "costume": "short costume name or null", "confidence": "high|medium|low", "shout_out": "the shout-out"}]}
+{"theme": "shared theme or null", "greeting": "the greeting", "people": [{"clues": "what you can see", "age": "little kid|big kid|teen or adult|pet", "costume": "short costume name or null", "confidence": "high|medium|low"}]}
 """  # noqa: E501 — the JSON example must stay on one line for the model to mirror it
 
 
@@ -158,14 +171,18 @@ _SARCASTIC = (" This call is a SARCASTIC one: give big kids, teens and adults dr
 
 
 def user_prompt(count: int, recent_costumes: list[str] | tuple[str, ...] = (),
-                sarcastic: bool = False) -> str:
+                sarcastic: bool = False, shout_outs: bool = False) -> str:
     """The per-call instruction, plus tonight's costume history when there is one,
-    plus the sarcasm switch on the calls chosen for it (03-F14)."""
+    plus the sarcasm switch on the calls chosen for it (03-F14). A group gets
+    ONE greeting for everyone (04-F11); per-visitor shout-outs only when asked
+    for (SHOUT_OUT_MAX_GROUP)."""
     if count == 1:
         base = "Here is the visitor who just arrived. Identify the costume and greet them."
     else:
         base = (f"These {count} visitors just arrived together. Identify each costume, "
-                "greet the group, and give each visitor a shout-out.")
+                "spot any theme they share, and greet them all in one line.")
+        if shout_outs:
+            base += " Also give each visitor a shout-out."
     if recent_costumes:
         seen = ", ".join(list(recent_costumes)[-_HISTORY_LIMIT:])
         base += _HISTORY_TEMPLATE.format(seen=seen)
