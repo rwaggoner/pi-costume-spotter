@@ -169,6 +169,7 @@ class CostumeIdentified(BaseEvent):
     group_id: str = ""   # links the visitors greeted together (02-F7)
     group_size: int = 1
     visitor_type: str = "person"  # person | dog | cat (01-F7)
+    theme: str = ""  # a theme the group's costumes share (03-F16)
 
 
 @dataclass(frozen=True)
@@ -180,6 +181,9 @@ class GreetingReady(BaseEvent):
     group_id: str
     text: str
     sighting_ids: tuple[str, ...]  # every sighting this greeting covers
+    # When the group was spotted: speech skips a greeting that's become too
+    # late to be about anyone still at the door (04-F11).
+    spotted_at: datetime | None = None
 
 
 @dataclass(frozen=True)
@@ -200,6 +204,7 @@ class CommentSpoken(BaseEvent):
     text: str
     engine: str
     spoken: bool
+    skipped_late: bool = False  # not spoken: too long after the group was spotted (04-F11)
 
 
 @dataclass(frozen=True)

@@ -59,6 +59,7 @@ class PersonReading:
 class GroupReading:
     greeting: str
     people: tuple[PersonReading, ...]  # one per visitor, in group order
+    theme: str = ""  # a theme the group's costumes share, e.g. "Ghostbusters" (03-F16)
 
 
 class CostumeIdentifier:
@@ -66,9 +67,15 @@ class CostumeIdentifier:
 
     def __init__(self, bus: EventBus, *, api_key: str | None, model: str,
                  timeout_seconds: float, detector_name: str,
-                 shout_out_max_group: int = 3, max_images_per_call: int = 8,
-                 sarcasm_rate: float = 0.4, rng: random.Random | None = None) -> None:
+                 shout_out_max_group: int = 1, max_images_per_call: int = 8,
+                 sarcasm_rate: float = 0.4, rng: random.Random | None = None,
+                 max_concurrent: int = 1) -> None:
         self._bus = bus
+        # 04-F11: groups are identified side by side, up to this many at once,
+        # so one slow Claude call doesn't hold up the next group at the door.
+        self._slots = asyncio.Semaphore(max(max_concurrent, 1))
+        self._concurrent = max_concurrent > 1
+        self._in_flight: set[asyncio.Task] = set()
         self._model = model
         self._timeout = timeout_seconds
         self._detector_name = detector_name
@@ -126,6 +133,20 @@ class CostumeIdentifier:
 
     async def on_group(self, event: BaseEvent) -> None:
         assert isinstance(event, GroupSpotted)
+        if not self._concurrent:
+            await self._identify_group(event)
+            return
+        # Hand the group to its own task and return, so the bus delivers the
+        # next group straight away; the semaphore caps calls in flight.
+        task = asyncio.create_task(self._identify_group(event), name=f"identify:{event.group_id}")
+        self._in_flight.add(task)
+        task.add_done_callback(self._in_flight.discard)
+
+    async def _identify_group(self, event: GroupSpotted) -> None:
+        async with self._slots:
+            await self._identify_group_now(event)
+
+    async def _identify_group_now(self, event: GroupSpotted) -> None:
         count = len(event.visitors)
         started = time.monotonic()
         # Minted up front so an early greeting (03-F15) can already name them.
@@ -138,7 +159,8 @@ class CostumeIdentifier:
             logger.info("greeting ready %.1f s after the group was spotted",
                         time.monotonic() - started)
             self._bus.publish(GreetingReady(group_id=event.group_id, text=greeting,
-                                            sighting_ids=sighting_ids))
+                                            sighting_ids=sighting_ids,
+                                            spotted_at=event.timestamp))
 
         if self._client is None:
             reading = self._pretend_reading([v.visitor_type for v in event.visitors])
@@ -157,8 +179,9 @@ class CostumeIdentifier:
                 logger.warning("identification failed (%s); using fallback identity", exc)
                 reading, source = self._fallback_reading(count), "fallback"
                 self._bus.publish(SystemStatus(component="identifier", ok=False, detail=str(exc)))
-        logger.info("identified %d visitor(s) %.1f s after they were spotted", count,
-                    time.monotonic() - started)
+        logger.info("identified %d visitor(s) %.1f s after they were spotted%s", count,
+                    time.monotonic() - started,
+                    f" - theme: {reading.theme}" if reading.theme else "")
 
         for sighting_id, visitor, person in zip(sighting_ids, event.visitors, reading.people,
                                                 strict=True):
@@ -167,10 +190,11 @@ class CostumeIdentifier:
                 visitor_id=visitor.visitor_id,
                 costume=person.costume,
                 confidence=person.confidence,
-                # A lone visitor's words ARE the greeting; in a group, each
-                # sighting keeps its own shout-out (falling back to the greeting).
-                comment=(reading.greeting if count == 1
-                         else person.shout_out or reading.greeting),
+                # The group's one greeting (04-F11), or the visitor's shout-out
+                # when shout-outs were asked for.
+                comment=(person.shout_out or reading.greeting
+                         if 1 < count <= self._shout_out_max_group else reading.greeting),
+                theme=reading.theme,
                 source=source,
                 snapshot_jpeg=visitor.snapshot_jpeg,
                 box=visitor.box,
@@ -184,11 +208,13 @@ class CostumeIdentifier:
             rest = self.shout_outs_text(reading)
             if rest and source == "claude":
                 self._bus.publish(GreetingReady(group_id=event.group_id, text=rest,
-                                                sighting_ids=sighting_ids))
+                                                sighting_ids=sighting_ids,
+                                                spotted_at=event.timestamp))
         else:
             self._bus.publish(GreetingReady(group_id=event.group_id,
                                             text=self.spoken_text(reading),
-                                            sighting_ids=sighting_ids))
+                                            sighting_ids=sighting_ids,
+                                            spotted_at=event.timestamp))
 
     def spoken_text(self, reading: GroupReading) -> str:
         """What the speaker says (04-F9): the greeting, then shout-outs for small groups."""
@@ -250,8 +276,10 @@ class CostumeIdentifier:
                     },
                 })
         sarcastic = self._rng.random() < self._sarcasm_rate
+        shout_outs = 1 < len(snapshots) <= self._shout_out_max_group
         content.append({"type": "text", "text": prompts.user_prompt(
-            len(snapshots), list(self._recent_costumes), sarcastic=sarcastic)})
+            len(snapshots), list(self._recent_costumes), sarcastic=sarcastic,
+            shout_outs=shout_outs)})
 
         request = {
             "model": self._model,
@@ -347,7 +375,10 @@ class CostumeIdentifier:
             greeting = people[0].shout_out
         if not greeting:
             raise ValueError("model returned an empty greeting")
-        return GroupReading(greeting, tuple(people))
+        theme = str(data.get("theme") or "").strip()[:60]
+        if theme.lower() in ("null", "none", "n/a"):
+            theme = ""
+        return GroupReading(greeting, tuple(people), theme=theme)
 
 
 def allocate_images(available: list[int], budget: int) -> list[int]:

@@ -78,10 +78,11 @@ def group(*kinds: str) -> GroupSpotted:
         for i, kind in enumerate(kinds, start=1)))
 
 
-async def wired(client: StreamingClient):
+async def wired(client: StreamingClient, shout_out_max_group: int = 1):
     bus = EventBus()
     identifier = CostumeIdentifier(bus, api_key="sk-test", model="x", timeout_seconds=5,
-                                   detector_name="mock", sarcasm_rate=0)
+                                   detector_name="mock", sarcasm_rate=0,
+                                   shout_out_max_group=shout_out_max_group)
     identifier._client = client  # noqa: SLF001
     greetings: list = []
     identified: list = []
@@ -117,10 +118,21 @@ async def test_a_lone_visitor_hears_the_greeting_before_claude_finishes():
     await bus.stop()
 
 
-async def test_a_small_group_hears_greeting_then_shout_outs():
+async def test_a_group_hears_one_greeting_for_everyone():  # 04-F11
     client = StreamingClient(PAIR)
     client.resume.set()
     bus, greetings, identified = await wired(client)
+    bus.publish(group("person", "person"))
+    await eventually(lambda: len(identified) == 2)
+    await drain(bus)
+    assert [g.text for g in greetings] == ["Spooky squad!"]
+    await bus.stop()
+
+
+async def test_shout_outs_follow_the_greeting_when_turned_on():
+    client = StreamingClient(PAIR)
+    client.resume.set()
+    bus, greetings, identified = await wired(client, shout_out_max_group=3)
     bus.publish(group("person", "person"))
     await eventually(lambda: len(greetings) == 2 and len(identified) == 2)
     assert [g.text for g in greetings] == ["Spooky squad!", "Fangs out! Great hat!"]

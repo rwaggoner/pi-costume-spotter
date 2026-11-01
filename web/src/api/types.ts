@@ -133,6 +133,7 @@ export interface GreetingReadyEvent extends EventBase {
   group_id: string;
   text: string;
   sighting_ids: string[];
+  spotted_at: string | null;
 }
 
 export interface CostumeIdentifiedEvent extends EventBase {
@@ -148,6 +149,8 @@ export interface CostumeIdentifiedEvent extends EventBase {
   group_id: string;
   group_size: number;
   visitor_type: string;
+  /** A theme the group's costumes share, e.g. "Ghostbusters" ("" = none). */
+  theme: string;
 }
 
 export interface SightingLoggedEvent extends EventBase {
@@ -164,6 +167,8 @@ export interface CommentSpokenEvent extends EventBase {
   text: string;
   engine: string;
   spoken: boolean;
+  /** Not spoken because it was too long after the group was spotted. */
+  skipped_late: boolean;
 }
 
 export interface SystemStatusEvent extends EventBase {

@@ -68,6 +68,8 @@ async def _run(paths: list[Path], group: bool, model: str, settings: Settings) -
             age = f", {person.age}" if person.age else ""
             print(f"  {path.name}: {costume}  [{person.confidence}{age}]"
                   + (f"  shout-out: {person.shout_out}" if len(batch) > 1 else ""))
+        if reading.theme:
+            print(f"  theme: {reading.theme}")
         print(f"  would say: \"{identifier.spoken_text(reading)}\"")
 
 

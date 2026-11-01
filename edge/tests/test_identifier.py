@@ -33,9 +33,10 @@ def make_group(size: int = 1, kinds: tuple[str, ...] = ()) -> GroupSpotted:
         for i, kind in enumerate(kinds, start=1)))
 
 
-def make_identifier(bus: EventBus, api_key: str | None = None) -> CostumeIdentifier:
+def make_identifier(bus: EventBus, api_key: str | None = None,
+                    shout_out_max_group: int = 1) -> CostumeIdentifier:
     return CostumeIdentifier(bus, api_key=api_key, model="x", timeout_seconds=1,
-                             detector_name="mock")
+                             detector_name="mock", shout_out_max_group=shout_out_max_group)
 
 
 async def collect(bus: EventBus) -> tuple[list, list]:
@@ -95,9 +96,8 @@ async def test_a_group_gets_one_greeting_and_a_sighting_each():  # 03-F9, 04-F9
     assert {e.group_id for e in identified} == {"g1"}
     assert all(e.group_size == 3 for e in identified)
     assert greetings[0].sighting_ids == tuple(e.sighting_id for e in identified)
-    # 3 people ≤ shout_out_max_group: each shout-out is part of what's spoken.
-    for event in identified:
-        assert event.comment in greetings[0].text
+    # 04-F11: one line for the whole group, and every sighting records it.
+    assert all(e.comment == greetings[0].text for e in identified)
     await bus.stop()
 
 
@@ -128,7 +128,7 @@ async def test_fallback_when_api_is_down():  # 03-F6
 
 async def test_one_request_carries_every_photo_labeled_in_order():  # 03-F9
     bus = EventBus()
-    identifier = make_identifier(bus, api_key="sk-test")
+    identifier = make_identifier(bus, api_key="sk-test", shout_out_max_group=3)
     calls: list = []
 
     class Recorder:
@@ -172,13 +172,19 @@ def test_lone_visitor_hears_only_the_greeting():
     assert make_identifier(EventBus()).spoken_text(reading("unused")) == "Hello, crew!"
 
 
-def test_small_group_hears_greeting_then_shout_outs():
-    text = make_identifier(EventBus()).spoken_text(reading("Boo!", "Meow!", "Rawr!"))
+def test_a_group_hears_one_greeting_by_default():  # 04-F11
+    assert make_identifier(EventBus()).spoken_text(reading("Boo!", "Meow!")) == "Hello, crew!"
+
+
+def test_small_group_hears_shout_outs_when_turned_on():
+    identifier = make_identifier(EventBus(), shout_out_max_group=3)
+    text = identifier.spoken_text(reading("Boo!", "Meow!", "Rawr!"))
     assert text == "Hello, crew! Boo! Meow! Rawr!"
 
 
 def test_big_group_hears_only_the_greeting():
-    text = make_identifier(EventBus()).spoken_text(reading("a", "b", "c", "d"))
+    identifier = make_identifier(EventBus(), shout_out_max_group=3)
+    text = identifier.spoken_text(reading("a", "b", "c", "d"))
     assert text == "Hello, crew!"
 
 
